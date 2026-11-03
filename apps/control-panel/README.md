@@ -54,7 +54,7 @@ access boundary and the exact host/origin checks.
 
 ## Interface
 
-The UI uses a system font stack, a restrained green accent, a prominent master
+The UI uses dark surfaces, system fonts, a restrained green accent, a prominent master
 volume readout and plain service indicators. A polish pass removed generic
 headlines, decorative glyphs and uppercase labels, aligned spacing to a 4px
 scale, and increased small-text contrast. No fonts, assets or scripts load from
