@@ -48,6 +48,7 @@
         default = host.config.system.build.sdImage;
         sd-image = host.config.system.build.sdImage;
         system = host.config.system.build.toplevel;
+        control-panel = pkgs.callPackage ./apps/control-panel/package.nix { };
       };
       formatter.${system} = pkgs.nixfmt-tree;
       checks.${system}.receiver =
@@ -67,6 +68,7 @@
             node tests/receiver-name.test.cjs
             touch $out
           '';
+      checks.${system}.control-panel = self.packages.${system}.control-panel;
       # These are store paths, not builds. The cache check fails before CI starts
       # an expensive compilation if one of these pinned outputs is missing.
       lib.cachePaths = {

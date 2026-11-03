@@ -14,6 +14,7 @@ This is a migration from an audited Raspberry Pi OS installation. Software build
 - SSH using the existing public key in `keys/pita.pub`; password login is disabled. `pita` has passwordless sudo for key-based administration. No password is embedded in the image.
 - Wi-Fi provisioning after flashing, or Ethernet DHCP. Credentials never enter Git or the Nix store.
 - Comin automatically follows `https://github.com/Noot-tooN/RaspPiHomeserver.git`, branch `master`, configuration `rasppi`.
+- A small Go control panel for DAC volume/mute and Spotify/YouTube service status and restart, accessible over Tailscale.
 - Tailscale matches HomeServer's network-only setup: normal SSH keys, Tailscale SSH disabled, client routing support, and a trusted `tailscale0` interface. LAN SSH remains available for first boot and recovery.
 
 Mopidy/Iris, Xpra, a desktop login, and the separate standalone PulseAudio daemon are intentionally omitted. [Migration decisions](docs/migration.md) describe the differences from the old installation.
@@ -38,6 +39,8 @@ The GitHub Actions workflow runs on a native ARM64 runner and checks the cache, 
 ### Build times and caches
 
 The cache check verifies the exact pinned kernel, kernel modules, firmware, Brave, librespot, PipeWire, WirePlumber, Xvfb and Tailscale outputs against `cache.nixos.org` and the Pi project's Cachix cache. It fails if a target is absent or the caches cannot be reached. It does not certify every transitive dependency.
+
+The control panel is a small, dependency-free Go source build with embedded web assets; changes to it do not rebuild the browser or audio stack. CI validates it but does not publish a binary cache, so Comin builds changed panel versions on the Pi.
 
 Comin is built from its pinned source. It is included in the image, so ordinary configuration changes reuse it; changing its version or dependencies can require another Go build. Generated units, scripts, initrds, and image assembly still run locally. The receiver-name change does not rebuild Brave. We avoid the Pi project's global multimedia overrides, which would cause additional rebuilds.
 
@@ -103,9 +106,39 @@ access rules still govern connectivity. Unlike HomeServer, this Pi also keeps
 LAN SSH open for initial setup and recovery. Client routing support does not
 advertise this Pi as an exit node or subnet router.
 
+## Control panel
+
+After Tailscale enrollment, open **http://rasppi:8090** from a device on your
+tailnet (MagicDNS required), or use `http://<Pi-Tailscale-IPv4>:8090`.
+The panel binds only to the Tailscale IPv4 address; it is not exposed on the LAN.
+Use the short hostname or IP, not the full tailnet DNS name. There is no separate
+panel password: tailnet access rules authorize access, and anyone allowed to
+reach this port can control the volume and restart the two services.
+
+- Set the DAC's master volume from 0–100% and mute/unmute it. WirePlumber saves
+  these settings as usual; opening the page does not change them.
+- See Spotify and YouTube service status, with live updates every five seconds.
+  A running process does not prove that casting or playback is healthy.
+- Restart either service. This interrupts that app's playback; the panel reports
+  that a restart was requested, then shows the actual service state.
+
+The panel runs as `pita`, without sudo. It remains available when an audio or
+receiver service fails, and retries startup until Tailscale has an address.
+Polling is shared between viewers and stops when no page is visible.
+
+```sh
+systemctl --user status rasppi-control-panel
+journalctl --user -u rasppi-control-panel -b
+```
+
+A previously built NixOS image can receive the panel through Comin after the
+change reaches `master`; flashing another image is unnecessary for this addition.
+See [control-panel development](apps/control-panel/README.md) for local tests
+and a simulated preview that never touches the Pi.
+
 ## Updates and recovery
 
-Comin follows `master` immediately; it does **not** wait for GitHub Actions. Merge changes only after the ARM64 checks pass. Before this initial configuration is merged, a candidate image cannot update from the license-only `master` branch.
+Comin follows `master` immediately; it does **not** wait for GitHub Actions. Merge changes only after the ARM64 checks pass.
 
 ```sh
 sudo journalctl -u comin -b

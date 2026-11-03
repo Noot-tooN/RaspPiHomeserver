@@ -31,7 +31,7 @@ jobs:
             extra-trusted-public-keys = nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI=
       - name: Verify expensive packages are cached
         run: python3 scripts/check_cache.py
-      - name: Evaluate configuration and test receiver helpers
+      - name: Evaluate configuration and test applications
         run: nix flake check --print-build-logs
       - name: Build the system
         run: nix build .#system --out-link result-system --print-build-logs
