@@ -10,6 +10,10 @@ in
   services.comin = {
     enable = true;
     hostname = "rasppi";
+    # A cold nixpkgs tree contains many small files; bounded SD I/O can take
+    # longer than the default 30-minute deadline, especially for both inputs.
+    evalTimeout = 5400;
+    buildTimeout = 5400;
     remotes = [
       {
         name = "origin";
