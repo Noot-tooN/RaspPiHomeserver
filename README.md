@@ -49,7 +49,7 @@ The GitHub Actions workflow runs on a native ARM64 runner and checks the cache, 
 
 The cache check verifies the exact pinned kernel, kernel modules, firmware, Brave, librespot, PipeWire, WirePlumber, Xvfb and Tailscale outputs against `cache.nixos.org` and the Pi project's Cachix cache. It fails if a target is absent or the caches cannot be reached. It does not certify every transitive dependency.
 
-The control panel is a small, dependency-free Go source build with embedded web assets; changes to it do not rebuild the browser or audio stack. CI validates it but does not publish a binary cache, so Comin builds changed panel versions on the Pi.
+The control panel is a small, dependency-free Go source build with embedded web assets; changes to it do not rebuild the browser or audio stack. CI validates it but does not publish a binary cache, so Comin builds changed panel versions on the Pi. Build and test flags are aligned so tests reuse compiled standard-library objects within that build.
 
 Comin is built from its pinned source. It is included in the image, so ordinary configuration changes reuse it; changing its version or dependencies can require another Go build. Generated units, scripts, initrds, and image assembly still run locally. The receiver-name change does not rebuild Brave. We avoid the Pi project's global multimedia overrides, which would cause additional rebuilds.
 
