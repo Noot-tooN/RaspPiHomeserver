@@ -11,39 +11,39 @@
 <body>
   <main>
     <header>
-      <a class="brand" href="/" aria-label="RaspPi home"><span class="brand-mark" aria-hidden="true">r.</span>RaspPi<span class="brand-note">HOME AUDIO</span></a>
+      <a class="brand" href="/" aria-label="RaspPi home">RaspPi<span class="brand-note">Home audio</span></a>
       <span id="connection" class="connection"><span class="dot"></span><span id="connection-text">Connecting</span></span>
     </header>
 
-    <div class="intro"><p class="eyebrow">YOUR LISTENING SPACE</p><h1>A little more control.</h1><p>Set the sound. Keep the music going.</p></div>
+    <div class="intro"><h1>Audio controls</h1><p>Volume and casting services on RaspPi</p></div>
 
     <section class="volume-card" aria-labelledby="volume-title">
-      <div class="card-top"><div><p class="eyebrow">AUDIO OUTPUT</p><h2 id="volume-title">DAC Pro</h2></div><span id="audio-status" class="badge neutral">Checking audio</span></div>
+      <div class="card-top"><div><p class="eyebrow">DAC Pro</p><h2 id="volume-title">Master volume</h2></div><span id="audio-status" class="badge neutral">Checking audio</span></div>
       <div class="volume-reading"><span id="volume-value">—</span><span class="volume-unit">%</span><span id="muted-label" hidden>Muted</span></div>
-      <div class="slider-row"><span aria-hidden="true" class="speaker">−</span><input id="volume" type="range" min="0" max="100" step="1" value="0" aria-label="Master volume" aria-valuetext="Unavailable" disabled><span aria-hidden="true" class="speaker">+</span></div>
-      <div class="range-labels"><span>Quiet</span><span>Full volume</span></div>
+      <div class="slider-row"><input id="volume" type="range" min="0" max="100" step="1" value="0" aria-label="Master volume" aria-valuetext="Unavailable" disabled></div>
+      <div class="range-labels"><span>0%</span><span>100%</span></div>
       <div class="volume-bottom"><p id="volume-note">Waiting for audio state…</p><button id="mute" class="button mute-button" type="button" aria-pressed="false" disabled>Mute output</button></div>
     </section>
 
     <section aria-labelledby="apps-title" class="apps-section">
-      <div class="section-heading"><h2 id="apps-title">Your apps</h2><span>Ready when you are</span></div>
+      <div class="section-heading"><h2 id="apps-title">Casting services</h2></div>
       <div class="apps-grid">
         <article class="app-card" aria-labelledby="spotify-title">
-          <div class="app-heading"><span class="app-icon spotify-icon" aria-hidden="true">≋</span><div><h3 id="spotify-title">Spotify</h3><p>Connect &amp; listen</p></div><span id="spotify-status" class="badge neutral">Checking</span></div>
+          <div class="app-heading"><div><h3 id="spotify-title">Spotify</h3><p>Spotify Connect</p></div><span id="spotify-status" class="badge neutral">Checking</span></div>
           <p id="spotify-detail" class="app-detail">Waiting for service state…</p>
-          <button id="spotify-restart" class="button restart" data-service="spotify" type="button" disabled><span aria-hidden="true">↻</span> Restart Spotify</button>
+          <button id="spotify-restart" class="button restart" data-service="spotify" type="button" disabled>Restart Spotify</button>
         </article>
         <article class="app-card" aria-labelledby="youtube-title">
-          <div class="app-heading"><span class="app-icon youtube-icon" aria-hidden="true">▶</span><div><h3 id="youtube-title">YouTube</h3><p>Your TV receiver</p></div><span id="youtube-status" class="badge neutral">Checking</span></div>
+          <div class="app-heading"><div><h3 id="youtube-title">YouTube</h3><p>YouTube TV receiver</p></div><span id="youtube-status" class="badge neutral">Checking</span></div>
           <p id="youtube-detail" class="app-detail">Waiting for service state…</p>
-          <button id="youtube-restart" class="button restart" data-service="youtube" type="button" disabled><span aria-hidden="true">↻</span> Restart YouTube</button>
+          <button id="youtube-restart" class="button restart" data-service="youtube" type="button" disabled>Restart YouTube</button>
         </article>
       </div>
-      <p class="section-note">Restarting an app interrupts its playback. Status shows whether its service is running.</p>
+      <p class="section-note">Restarting interrupts playback. Running means the service is active, not that a device is casting.</p>
     </section>
 
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
-    <footer><span><span class="footer-dot"></span> Sound stays on your Pi</span><span id="updated">Waiting for an update</span></footer>
+    <footer><span>Audio plays on RaspPi</span><span id="updated">Waiting for an update</span></footer>
   </main>
 </body>
 </html>

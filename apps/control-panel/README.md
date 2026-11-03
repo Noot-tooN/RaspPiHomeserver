@@ -51,3 +51,14 @@ The standalone executable defaults to loopback port 8090. `--help` lists the
 listen address, interface, allowed hostnames, sink and command-path options.
 Changing the binding or putting a proxy in front requires revisiting both the
 access boundary and the exact host/origin checks.
+
+## Interface
+
+The UI uses a system font stack, a restrained green accent, a prominent master
+volume readout and plain service indicators. A polish pass removed generic
+headlines, decorative glyphs and uppercase labels, aligned spacing to a 4px
+scale, and increased small-text contrast. No fonts, assets or scripts load from
+external services.
+
+Design pass guided by [Unslop](https://github.com/heydamir/unslop) by
+[Damir Sokolovsky](https://x.com/heydamir), licensed CC BY 4.0.
