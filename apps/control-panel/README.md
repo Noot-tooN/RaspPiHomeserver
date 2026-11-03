@@ -62,3 +62,10 @@ external services.
 
 Design pass guided by [Unslop](https://github.com/heydamir/unslop) by
 [Damir Sokolovsky](https://x.com/heydamir), licensed CC BY 4.0.
+
+A second Unslop audit of the dark theme found excess green tint in surfaces and
+text, competing green status labels, and leftover shadows. The polish uses a
+near-neutral charcoal ramp, keeps green on the fader and healthy status dots,
+and separates surfaces with borders instead of shadows. The audit retained
+the existing spacing, copy, typography, layout, imagery-free controls and
+reduced-motion behavior; no additional changes were warranted in those passes.
