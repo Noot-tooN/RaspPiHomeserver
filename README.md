@@ -159,7 +159,9 @@ and up to 512 MB compressed swap. Disk reads/writes are capped at 8/2 MB per
 second and 300/100 operations per second, with lower CPU/I/O priority. Initial
 updates can take longer; audio and SSH should remain responsive. Nix downloads
 and unpacks one substitute at a time, and automatic store deduplication is off
-to avoid an extra SD-card scan. Builds still use cached packages where available.
+to avoid an extra SD-card scan. Builds still use cached packages where available. Evaluation and builds each
+have a 90-minute timeout so a cold cache can populate under these limits without
+being repeatedly cancelled. Small updates reuse dependencies while cached.
 
 The vendor kernel's memory controller is enabled with `cgroup_enable=memory`;
 this requires a reboot when first added. Comin checks that the controller exists
