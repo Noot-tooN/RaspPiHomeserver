@@ -1,0 +1,45 @@
+add_newline = true
+
+# Match the Mac's two-line layout; $all retains SSH user and host context.
+format = "$os$directory$all$fill$cmd_duration$time$line_break$character"
+
+[fill]
+symbol = " "
+
+[os]
+disabled = false
+format = "[$symbol]($style)"
+style = "fg:#c6c6c6"
+
+[os.symbols]
+NixOS = " "
+
+[directory]
+format = "[$path]($style) "
+style = "bold fg:#00a8d4"
+home_symbol = "~"
+truncation_length = 0
+truncate_to_repo = false
+substitutions = [
+  { from = "^~$", to = " ~", regex = true },
+  { from = "^~/", to = " ~/", regex = true },
+  { from = "^/", to = " /", regex = true },
+]
+
+[cmd_duration]
+disabled = false
+min_time = 500
+show_milliseconds = true
+format = "[󱦟 $duration]($style)  "
+style = "fg:#989898"
+
+[time]
+disabled = false
+time_format = "%T"
+format = "[ $time]($style)"
+style = "fg:#557c7f"
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+vimcmd_symbol = "[❮](bold green)"

@@ -14,6 +14,7 @@
     ../../modules/spotify.nix
     ../../modules/youtube.nix
     ../../modules/updates.nix
+    ../../modules/shell.nix
   ];
 
   networking.hostName = "rasppi";
@@ -50,8 +51,6 @@
       "flakes"
     ];
     max-jobs = 1;
-    cores = 2;
-    auto-optimise-store = true;
   };
   nix.gc = {
     automatic = true;
