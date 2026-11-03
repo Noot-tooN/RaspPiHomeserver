@@ -130,6 +130,12 @@ reach this port can control the volume and restart the two services.
   A running process does not prove that casting or playback is healthy.
 - Restart either service. This interrupts that app's playback; the panel reports
   that a restart was requested, then shows the actual service state.
+- Use **Link phone** on the YouTube card to display its current TV code. On your
+  phone, open YouTube → Cast → Link with TV code and enter the numbers. Opening
+  pairing settings can interrupt YouTube playback. A fresh receiver is opened
+  in guest mode; no Google account sign-in is required. Codes appear only on
+  request and are hidden after five minutes, on refresh, or when restarting
+  YouTube from the panel. **Hide code** clears the display without unlinking devices.
 
 The panel runs as `pita`, without sudo. It remains available when an audio or
 receiver service fails, and retries startup until Tailscale has an address.

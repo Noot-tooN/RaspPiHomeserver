@@ -2,6 +2,13 @@
 const $ = id => document.getElementById(id);
 let current = null, connected = false, busy = false, dragging = false, events = null, noticeTimer, staleTimer;
 const restartUntil = {spotify: 0, youtube: 0};
+let pairingBusy = false, pairingTimer, pairingRetryAt = 0;
+
+function hidePairing() {
+  clearTimeout(pairingTimer);
+  $('pairing-code').textContent = '';
+  $('pairing-result').hidden = true;
+}
 
 function notice(message, error = false) {
   clearTimeout(noticeTimer);
@@ -53,7 +60,36 @@ function render() {
     $(id + '-detail').textContent = detail;
     $(id + '-restart').disabled = !connected || busy || !service || Boolean(service.error) || Date.now() < restartUntil[id];
   }
+  const youtube = current?.services.find(s => s.id === 'youtube');
+  $('youtube-pair').disabled = !connected || busy || youtube?.active !== 'active' || Boolean(youtube?.error) || Date.now() < pairingRetryAt;
+  $('youtube-pair').textContent = pairingBusy ? 'Getting code…' : 'Link phone';
 }
+
+$('youtube-pair').addEventListener('click', async () => {
+  if (busy || !connected) return;
+  hidePairing();
+  pairingBusy = true; busy = true; render();
+  pairingRetryAt = Date.now() + 15000;
+  try {
+    const response = await fetch('/api/youtube/pairing', {
+      method: 'POST', headers: {'Content-Type': 'application/json', 'X-Requested-With': 'rasppi-control-panel'},
+      body: '{}', signal: AbortSignal.timeout(35000)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not get a TV code');
+    if (!/^[0-9]{12}$/.test(result.code)) throw new Error('YouTube returned an unreadable TV code. Try again.');
+    $('pairing-code').textContent = result.code.match(/.{3}/g).join(' ');
+    $('pairing-result').hidden = false;
+    // Keep codes out of storage and hide them after five minutes or a restart.
+    pairingTimer = setTimeout(hidePairing, 5 * 60 * 1000);
+  } catch (error) {
+    notice(error.name === 'TimeoutError' ? 'YouTube took too long to show a code. Wait a moment and try again.' : error.message || 'Connection lost. Try again.', true);
+  } finally {
+    pairingBusy = false; busy = false; render();
+    setTimeout(render, Math.max(0, pairingRetryAt - Date.now()) + 50);
+  }
+});
+$('pairing-hide').addEventListener('click', hidePairing);
 
 async function change(path, payload, message) {
   if (busy || !connected) return false;
@@ -97,6 +133,7 @@ $('mute').addEventListener('click', async () => {
 for (const button of document.querySelectorAll('[data-service]')) {
   button.addEventListener('click', async () => {
     const id = button.dataset.service;
+    if (id === 'youtube') hidePairing();
     if (await change('/api/restart', {service: id}, `${id === 'spotify' ? 'Spotify' : 'YouTube'} restart requested`)) {
       restartUntil[id] = Date.now() + 5000;
       render();

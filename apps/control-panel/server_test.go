@@ -61,6 +61,45 @@ func (c *fakeController) Restart(_ context.Context, _ string) error {
 	return nil
 }
 
+func (c *fakeController) PairYouTube(context.Context) (pairingCode, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls++
+	if c.fail {
+		return pairingCode{}, errors.New("private browser diagnostic")
+	}
+	return pairingCode{Code: "123456789012"}, nil
+}
+
+func TestPairingIsAnExplicitProtectedAction(t *testing.T) {
+	c := fixtureController()
+	p := newPanel(c, []string{"rasppi:8090"})
+	for _, body := range []string{`{"url":"https://example.com"}`, `{"command":"anything"}`} {
+		if w := request(p, "/api/youtube/pairing", body); w.Code != 400 || c.calls != 0 {
+			t.Fatal("pairing accepted arbitrary instructions")
+		}
+	}
+	r := httptest.NewRequest("POST", "http://rasppi:8090/api/youtube/pairing", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	p.handler().ServeHTTP(w, r)
+	if w.Code != 403 || c.calls != 0 {
+		t.Fatal("pairing bypassed same-origin protection")
+	}
+	w = request(p, "/api/youtube/pairing", `{}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "123456789012") || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("pairing failed: %d %s", w.Code, w.Body.String())
+	}
+	if w := request(p, "/api/youtube/pairing", `{}`); w.Code != 429 || c.calls != 1 {
+		t.Fatal("pairing flood was not limited")
+	}
+	c.fail = true
+	p.lastPairing = time.Time{}
+	w = request(p, "/api/youtube/pairing", `{}`)
+	if w.Code != 503 || strings.Contains(w.Body.String(), "private") {
+		t.Fatal("pairing error leaked browser details")
+	}
+}
+
 func request(p *panel, path, body string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest("POST", "http://rasppi:8090"+path, strings.NewReader(body))
 	r.Header.Set("Origin", "http://rasppi:8090")
