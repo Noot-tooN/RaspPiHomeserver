@@ -54,7 +54,9 @@
       checks.${system} = {
         dashboard = pkgs.runCommand "dashboard-config-check" { nativeBuildInputs = [ pkgs.caddy ]; } ''
           export HOME=$TMPDIR
-          caddy adapt --config ${host.config.services.caddy.configFile} --adapter caddyfile --validate > /dev/null
+          # Keep the actual routes/TLS settings; only move access logs into the sandbox.
+          sed "s|/var/log/caddy/|$TMPDIR/caddy-logs/|g" ${host.config.services.caddy.configFile} > Caddyfile
+          caddy adapt --config Caddyfile --adapter caddyfile --validate > /dev/null
           touch $out
         '';
         receiver =
