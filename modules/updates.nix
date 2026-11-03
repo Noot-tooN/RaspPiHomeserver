@@ -44,6 +44,10 @@ in
       IOWriteIOPSMax = "/ 250";
     };
   };
+  # Preserve the user services' working set when Nix fills the file cache.
+  # This is best-effort reclaim protection, not a memory reservation or limit.
+  systemd.slices.user.sliceConfig.MemoryLow = "512M";
+
   systemd.services.comin.serviceConfig = backgroundService // {
     # Do not silently run unbounded after booting an older kernel command line.
     ExecCondition = "${pkgs.gnugrep}/bin/grep -qw memory /sys/fs/cgroup/cgroup.controllers";
