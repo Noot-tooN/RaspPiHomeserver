@@ -153,6 +153,24 @@ and a simulated preview that never touches the Pi.
 
 ## Updates and recovery
 
+Comin, the Nix daemon, and garbage collection share a background resource
+budget: one CPU core, 800 MB memory pressure threshold, 1.1 GB memory ceiling,
+and up to 512 MB compressed swap. Disk reads/writes are capped at 8/2 MB per
+second and 300/100 operations per second, with lower CPU/I/O priority. Initial
+updates can take longer; audio and SSH should remain responsive. Nix downloads
+and unpacks one substitute at a time, and automatic store deduplication is off
+to avoid an extra SD-card scan. Builds still use cached packages where available.
+
+The vendor kernel's memory controller is enabled with `cgroup_enable=memory`;
+this requires a reboot when first added. Comin checks that the controller exists
+before starting. The existing kernel's BFQ module prioritizes foreground SD-card
+I/O; no kernel compilation is introduced. Limits resolve the disk backing `/`,
+so the recovery USB also works.
+
+To inspect the effective controls, use `systemctl show nixmaintenance.slice`
+and `cat /sys/fs/cgroup/nixmaintenance.slice/io.max`. Comin's journal records
+evaluation, build, and deployment progress: `journalctl -u comin -f`.
+
 Comin follows `master` immediately; it does **not** wait for GitHub Actions. Merge changes only after the ARM64 checks pass.
 
 ```sh
@@ -175,3 +193,12 @@ sudo nixos-rebuild switch --rollback
 Revert/fix the Git commit and restart Comin when ready. Kernel/firmware activation needs a reboot to fully take effect. The image keeps up to five boot generations, but the original SD card is the dependable recovery path until physical rollback has been tested.
 
 The YouTube monitor detects empty documents, browser errors and a missing name hook. It does not prove playback works or that YouTube's remote casting service is healthy. YouTube's website is fetched at runtime and can change independently of the pinned OS.
+
+## SSH shell
+
+`pita` uses Fish with HomeServer's Starship prompt, green command highlighting,
+Ctrl-H word deletion, `ls`/`ll`/`lt`/`cat`/`find` abbreviations, fzf file previews,
+and `!!`/`!$`/`!*` history helpers. The prompt and helpers were copied from
+HomeServer revision `7b20a1d325651937afb0b9e9e338bb678a2921f5` and are managed by
+NixOS. Command history and credentials are not copied. Open a new SSH session
+after deployment to use the new login shell.
