@@ -4,11 +4,6 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
-    inputs:
-      build_image:
-        description: Build and upload a flashable SD image
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -35,15 +30,3 @@ jobs:
         run: nix flake check --print-build-logs
       - name: Build the system
         run: nix build .#system --out-link result-system --print-build-logs
-      - name: Build SD image
-        if: github.event_name == 'workflow_dispatch' && inputs.build_image
-        run: nix build .#sd-image --out-link result-image --print-build-logs
-      - name: Upload SD image
-        if: github.event_name == 'workflow_dispatch' && inputs.build_image
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: rasppi-sd-image
-          path: result-image/sd-image/*.img.zst
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
