@@ -30,6 +30,15 @@ The completed build uses these pinned versions:
 
 The kernel and firmware were actually downloaded from the Pi cache during local validation. The configuration does not compile a kernel or browser. Store paths depend on `flake.lock`; run `python3 scripts/check_cache.py` after changing it.
 
+## Control panel
+
+Local Go race tests and `go vet` pass. A statically linked Linux ARM64 executable
+builds from macOS without a cross C toolchain. Desktop and phone-size browser
+checks use a fake backend: volume, mute and restart feedback are verified
+without touching the Pi or playing sound. Nix packages run the Go tests in ARM64
+CI as part of `nix flake check`. Live PipeWire access, user-service hardening and
+Tailscale binding still require a physical NixOS boot.
+
 ## Outstanding
 
 Physical DAC detection, sound output, phone discovery, cold-boot ordering, Wi-Fi provisioning, and rollback must be tested on a spare card. The existing Pi OS test confirmed the naming hook's behavior and fresh-phone pairing, not this NixOS image's runtime behavior.
