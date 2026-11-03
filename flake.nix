@@ -5,6 +5,8 @@
     # Follow the Pi project's exact package set to preserve its kernel cache hits.
     nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/main";
     nixpkgs.follows = "nixos-raspberrypi/nixpkgs";
+    # Match HomeServer: newer Tailscale fixes without changing the Pi kernel pin.
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     comin = {
       url = "github:nlewo/comin";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -22,6 +24,7 @@
     {
       self,
       nixpkgs,
+      nixpkgs-unstable,
       nixos-raspberrypi,
       comin,
       ...
@@ -29,6 +32,7 @@
     let
       system = "aarch64-linux";
       host = nixos-raspberrypi.lib.nixosSystem {
+        specialArgs.pkgsUnstable = import nixpkgs-unstable { inherit system; };
         modules = [
           nixos-raspberrypi.nixosModules.raspberry-pi-4.base
           nixos-raspberrypi.nixosModules.sd-image
@@ -74,6 +78,7 @@
         pipewire = pkgs.pipewire.outPath;
         wireplumber = pkgs.wireplumber.outPath;
         xvfb = pkgs.xvfb.outPath;
+        tailscale = host.config.services.tailscale.package.outPath;
       };
     };
 }
