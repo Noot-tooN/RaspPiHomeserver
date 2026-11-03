@@ -34,14 +34,14 @@ in
       CPUWeight = 10;
       CPUQuota = "100%";
       IOWeight = 10;
-      MemoryHigh = "800M";
+      MemoryHigh = "1000M";
       MemoryMax = "1100M";
       MemorySwapMax = "512M";
       # Resolve the backing disk from /, so SD and recovery USB boots work.
       IOReadBandwidthMax = "/ 8M";
       IOWriteBandwidthMax = "/ 2M";
-      IOReadIOPSMax = "/ 300";
-      IOWriteIOPSMax = "/ 100";
+      IOReadIOPSMax = "/ 1000";
+      IOWriteIOPSMax = "/ 250";
     };
   };
   systemd.services.comin.serviceConfig = backgroundService // {

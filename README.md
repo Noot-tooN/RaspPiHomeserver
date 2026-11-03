@@ -164,9 +164,9 @@ and a simulated preview that never touches the Pi.
 ## Updates and recovery
 
 Comin, the Nix daemon, and garbage collection share a background resource
-budget: one CPU core, 800 MB memory pressure threshold, 1.1 GB memory ceiling,
-and up to 512 MB compressed swap. Disk reads/writes are capped at 8/2 MB per
-second and 300/100 operations per second, with lower CPU/I/O priority. Initial
+budget: one CPU core, 1,000 MiB memory pressure threshold, 1,100 MiB memory ceiling,
+and up to 512 MiB compressed swap. Disk reads/writes are capped at 8/2 MB per
+second and 1,000/250 operations per second, with lower CPU/I/O priority. Initial
 updates can take longer; audio and SSH should remain responsive. Nix downloads
 and unpacks one substitute at a time, and automatic store deduplication is off
 to avoid an extra SD-card scan. Builds still use cached packages where available. Evaluation and builds each
