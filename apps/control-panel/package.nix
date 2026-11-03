@@ -14,4 +14,7 @@ buildGoModule {
     mv $out/bin/control-panel $out/bin/rasppi-control-panel
   '';
   doCheck = true;
+  # buildGoModule removes -trimpath before tests. These tests use embedded
+  # assets, so keep it to reuse the standard-library objects from buildPhase.
+  checkFlags = [ "-trimpath" ];
 }

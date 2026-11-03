@@ -44,8 +44,10 @@ restarts have a five-second cooldown. Missing audio or service state is shown
 as unavailable rather than assumed healthy.
 
 Tailscale provides the access boundary. The production service binds only to
-its interface's IPv4 address and restarts if that address changes. The exact
-HTTP host allowlist and same-origin JSON/custom-header checks protect against
+loopback. Caddy serves it at `https://rasppi.tail0fa2e4.ts.net/audio/`, preserving
+Host and Origin while stripping `/audio` from upstream paths. Relative assets
+and API URLs also keep standalone loopback previews working.
+The exact public-origin allowlist and same-origin JSON/custom-header checks protect against
 browser-based cross-site requests and DNS rebinding. There is no general shell,
 log viewer, browser remote control, or arbitrary systemd API.
 
@@ -59,9 +61,9 @@ the UI hides them after five minutes. A YouTube UI change can make extraction
 fail, in which case the panel reports the failure without returning page data.
 
 The standalone executable defaults to loopback port 8090. `--help` lists the
-listen address, interface, allowed hostnames, sink and command-path options.
-Changing the binding or putting a proxy in front requires revisiting both the
-access boundary and the exact host/origin checks.
+listen address, interface, allowed hostnames, public origin, sink and command-path
+options. `--public-origin` explicitly trusts an HTTP or HTTPS authority for a
+reverse proxy; client-supplied forwarding headers never grant access.
 
 ## Interface
 

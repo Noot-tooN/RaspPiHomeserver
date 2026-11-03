@@ -38,6 +38,7 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:8090", "HTTP listen address")
 	iface := flag.String("interface", "", "Bind only to this interface's IPv4 address instead of the listen host")
 	names := flag.String("allowed-hosts", "localhost", "Comma-separated additional HTTP hostnames (without port)")
+	publicOrigin := flag.String("public-origin", "", "Exact public origin when served behind a reverse proxy")
 	sink := flag.String("sink", "rasppi-dac", "PipeWire/PulseAudio sink name")
 	pactl := flag.String("pactl", "pactl", "Path to pactl")
 	systemctl := flag.String("systemctl", "systemctl", "Path to systemctl")
@@ -65,6 +66,11 @@ func main() {
 	}
 	control := &systemController{pactl: *pactl, systemctl: *systemctl, sink: *sink, pairingCommand: *pairing, run: runCommand}
 	p := newPanel(control, authorities)
+	if *publicOrigin != "" {
+		if err := p.allowPublicOrigin(*publicOrigin); err != nil {
+			log.Fatal(err)
+		}
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	go p.monitor(ctx)

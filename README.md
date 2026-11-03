@@ -49,7 +49,7 @@ The GitHub Actions workflow runs on a native ARM64 runner and checks the cache, 
 
 The cache check verifies the exact pinned kernel, kernel modules, firmware, Brave, librespot, PipeWire, WirePlumber, Xvfb and Tailscale outputs against `cache.nixos.org` and the Pi project's Cachix cache. It fails if a target is absent or the caches cannot be reached. It does not certify every transitive dependency.
 
-The control panel is a small, dependency-free Go source build with embedded web assets; changes to it do not rebuild the browser or audio stack. CI validates it but does not publish a binary cache, so Comin builds changed panel versions on the Pi.
+The control panel is a small, dependency-free Go source build with embedded web assets; changes to it do not rebuild the browser or audio stack. CI validates it but does not publish a binary cache, so Comin builds changed panel versions on the Pi. Build and test flags are aligned so tests reuse compiled standard-library objects within that build.
 
 Comin is built from its pinned source. It is included in the image, so ordinary configuration changes reuse it; changing its version or dependencies can require another Go build. Generated units, scripts, initrds, and image assembly still run locally. The receiver-name change does not rebuild Brave. We avoid the Pi project's global multimedia overrides, which would cause additional rebuilds.
 
@@ -117,12 +117,22 @@ advertise this Pi as an exit node or subnet router.
 
 ## Control panel
 
-After Tailscale enrollment, open **http://rasppi:8090** from a device on your
-tailnet (MagicDNS required), or use `http://<Pi-Tailscale-IPv4>:8090`.
-The panel binds only to the Tailscale IPv4 address; it is not exposed on the LAN.
-Use the short hostname or IP, not the full tailnet DNS name. There is no separate
-panel password: tailnet access rules authorize access, and anyone allowed to
-reach this port can control the volume and restart the two services.
+After Tailscale enrollment, open **https://rasppi.tail0fa2e4.ts.net/** for the
+Homer dashboard, matching HomeServer. The Audio link opens **/audio/** for volume,
+Spotify, YouTube, and phone pairing. HTTP redirects to HTTPS; `/audio` redirects
+to `/audio/` so relative assets and API calls resolve correctly.
+
+Caddy obtains and renews the Pi's certificate through Tailscale. The tailnet must
+have HTTPS Certificates enabled in its DNS settings, as for HomeServer.
+The dashboard defaults to dark mode and consists of static files served by
+Caddy. The audio backend listens only on `127.0.0.1:8090`; its port is no longer
+reachable from other devices. The firewall permits web access through the
+trusted Tailscale interface and keeps it closed on the LAN.
+
+There is no separate panel password: tailnet access rules authorize access,
+and anyone allowed to reach the dashboard can control volume and restart the
+two services. The backend validates the exact public HTTPS origin; arbitrary
+Host, Origin, and forwarding headers do not bypass those checks.
 
 - Set the DAC's master volume from 0–100% and mute/unmute it. WirePlumber saves
   these settings as usual; opening the page does not change them.
@@ -154,10 +164,11 @@ and a simulated preview that never touches the Pi.
 ## Updates and recovery
 
 Comin, the Nix daemon, and garbage collection share a background resource
-budget: one CPU core, 800 MB memory pressure threshold, 1.1 GB memory ceiling,
-and up to 512 MB compressed swap. Disk reads/writes are capped at 8/2 MB per
-second and 300/100 operations per second, with lower CPU/I/O priority. Initial
-updates can take longer; audio and SSH should remain responsive. Nix downloads
+budget: one CPU core, 1,000 MiB memory pressure threshold, 1,100 MiB memory ceiling,
+and up to 512 MiB compressed swap. Disk reads/writes are capped at 8/2 MB per
+second and 1,000/250 operations per second, with lower CPU/I/O priority. Initial
+updates can take longer. User services have 512 MiB of best-effort memory
+reclaim protection to help audio and SSH remain responsive. Nix downloads
 and unpacks one substitute at a time, and automatic store deduplication is off
 to avoid an extra SD-card scan. Builds still use cached packages where available. Evaluation and builds each
 have a 90-minute timeout so a cold cache can populate under these limits without

@@ -52,6 +52,13 @@
       };
       formatter.${system} = pkgs.nixfmt-tree;
       checks.${system} = {
+        dashboard = pkgs.runCommand "dashboard-config-check" { nativeBuildInputs = [ pkgs.caddy ]; } ''
+          export HOME=$TMPDIR
+          # Keep the actual routes/TLS settings; only move access logs into the sandbox.
+          sed "s|/var/log/caddy/|$TMPDIR/caddy-logs/|g" ${host.config.services.caddy.configFile} > Caddyfile
+          caddy adapt --config Caddyfile --adapter caddyfile --validate > /dev/null
+          touch $out
+        '';
         receiver =
           pkgs.runCommand "receiver-tests"
             {
@@ -74,6 +81,8 @@
       # These are store paths, not builds. The cache check fails before CI starts
       # an expensive compilation if one of these pinned outputs is missing.
       lib.cachePaths = {
+        caddy = pkgs.caddy.outPath;
+        homer = pkgs.homer.outPath;
         kernel = host.config.boot.kernelPackages.kernel.outPath;
         kernel-modules = host.config.boot.kernelPackages.kernel.modules.outPath;
         firmware = host.config.boot.loader.raspberry-pi.firmwarePackage.outPath;

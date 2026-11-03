@@ -3,7 +3,10 @@ let
   backgroundService = {
     Slice = "nixmaintenance.slice";
     Nice = 15;
-    IOSchedulingClass = "idle";
+    # BFQ serves idle-class queues only after ordinary traffic. Keep updates
+    # low priority without starving filesystem metadata operations.
+    IOSchedulingClass = "best-effort";
+    IOSchedulingPriority = 7;
   };
 in
 {
@@ -31,16 +34,20 @@ in
       CPUWeight = 10;
       CPUQuota = "100%";
       IOWeight = 10;
-      MemoryHigh = "800M";
+      MemoryHigh = "1000M";
       MemoryMax = "1100M";
       MemorySwapMax = "512M";
       # Resolve the backing disk from /, so SD and recovery USB boots work.
       IOReadBandwidthMax = "/ 8M";
       IOWriteBandwidthMax = "/ 2M";
-      IOReadIOPSMax = "/ 300";
-      IOWriteIOPSMax = "/ 100";
+      IOReadIOPSMax = "/ 1000";
+      IOWriteIOPSMax = "/ 250";
     };
   };
+  # Preserve the user services' working set when Nix fills the file cache.
+  # This is best-effort reclaim protection, not a memory reservation or limit.
+  systemd.slices.user.sliceConfig.MemoryLow = "512M";
+
   systemd.services.comin.serviceConfig = backgroundService // {
     # Do not silently run unbounded after booting an older kernel command line.
     ExecCondition = "${pkgs.gnugrep}/bin/grep -qw memory /sys/fs/cgroup/cgroup.controllers";
@@ -48,7 +55,8 @@ in
   systemd.services.nix-daemon.serviceConfig = {
     inherit (backgroundService) Slice Nice;
   };
-  nix.daemonIOSchedClass = "idle";
+  nix.daemonIOSchedClass = "best-effort";
+  nix.daemonIOSchedPriority = 7;
   systemd.services.nix-gc.serviceConfig = backgroundService;
 
   # Substitutions otherwise default to 16 parallel downloads/unpacks. Store
