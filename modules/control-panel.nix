@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ pkgs, ... }:
 let
   panel = pkgs.callPackage ../apps/control-panel/package.nix { };
   python = pkgs.python3.withPackages (ps: [ ps.websockets ]);
@@ -16,9 +16,8 @@ in
     };
     environment.PULSE_SERVER = "unix:%t/pulse/native";
     serviceConfig = {
-      # Bind specifically to Tailscale, never all LAN interfaces. Before initial
-      # enrollment the service retries until the interface has an address.
-      ExecStart = "${panel}/bin/rasppi-control-panel --interface ${config.services.tailscale.interfaceName} --allowed-hosts ${config.networking.hostName} --pactl ${pkgs.pulseaudio}/bin/pactl --systemctl ${pkgs.systemd}/bin/systemctl --youtube-pairing ${pairing}";
+      # Only Caddy exposes this service, at the exact public HTTPS origin.
+      ExecStart = "${panel}/bin/rasppi-control-panel --listen 127.0.0.1:8090 --public-origin https://rasppi.tail0fa2e4.ts.net --pactl ${pkgs.pulseaudio}/bin/pactl --systemctl ${pkgs.systemd}/bin/systemctl --youtube-pairing ${pairing}";
       Restart = "always";
       RestartSec = 15;
       TimeoutStopSec = 5;
@@ -33,5 +32,5 @@ in
       TasksMax = 32;
     };
   };
-  # tailscale0 is already trusted. No LAN firewall port or sudo rule is added.
+  # No backend firewall port or sudo rule is added.
 }

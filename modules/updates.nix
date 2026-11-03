@@ -3,7 +3,10 @@ let
   backgroundService = {
     Slice = "nixmaintenance.slice";
     Nice = 15;
-    IOSchedulingClass = "idle";
+    # BFQ serves idle-class queues only after ordinary traffic. Keep updates
+    # low priority without starving filesystem metadata operations.
+    IOSchedulingClass = "best-effort";
+    IOSchedulingPriority = 7;
   };
 in
 {
@@ -48,7 +51,8 @@ in
   systemd.services.nix-daemon.serviceConfig = {
     inherit (backgroundService) Slice Nice;
   };
-  nix.daemonIOSchedClass = "idle";
+  nix.daemonIOSchedClass = "best-effort";
+  nix.daemonIOSchedPriority = 7;
   systemd.services.nix-gc.serviceConfig = backgroundService;
 
   # Substitutions otherwise default to 16 parallel downloads/unpacks. Store

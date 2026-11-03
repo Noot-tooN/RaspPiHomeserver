@@ -10,6 +10,7 @@
     ../../modules/network.nix
     ../../modules/tailscale.nix
     ../../modules/control-panel.nix
+    ../../modules/home-dashboard.nix
     ../../modules/audio.nix
     ../../modules/spotify.nix
     ../../modules/youtube.nix

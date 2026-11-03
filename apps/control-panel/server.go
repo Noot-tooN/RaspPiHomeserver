@@ -20,7 +20,7 @@ var web embed.FS
 
 type panel struct {
 	control     controller
-	hosts       map[string]bool
+	origins     map[string]string
 	actions     chan struct{}
 	mu          sync.Mutex
 	clients     map[chan []byte]bool
@@ -30,11 +30,22 @@ type panel struct {
 }
 
 func newPanel(c controller, authorities []string) *panel {
-	p := &panel{control: c, hosts: make(map[string]bool), actions: make(chan struct{}, 1), clients: make(map[chan []byte]bool), wake: make(chan struct{}, 1), lastRestart: make(map[string]time.Time)}
+	p := &panel{control: c, origins: make(map[string]string), actions: make(chan struct{}, 1), clients: make(map[chan []byte]bool), wake: make(chan struct{}, 1), lastRestart: make(map[string]time.Time)}
 	for _, host := range authorities {
-		p.hosts[strings.ToLower(host)] = true
+		p.origins[strings.ToLower(host)] = "http"
 	}
 	return p
+}
+
+// A reverse proxy preserves the public Host and Origin. Trust only the
+// explicitly configured origin, never client-supplied forwarding headers.
+func (p *panel) allowPublicOrigin(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return fmt.Errorf("public origin must be an http(s) origin without a path, credentials, query, or fragment")
+	}
+	p.origins[strings.ToLower(u.Host)] = u.Scheme
+	return nil
 }
 
 func (p *panel) refresh() {
@@ -244,14 +255,15 @@ func (p *panel) handler() http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 		// An exact authority allowlist also prevents DNS-rebinding attacks on
 		// a service whose authentication is provided by the Tailscale network.
-		if !p.hosts[strings.ToLower(r.Host)] {
+		scheme, allowed := p.origins[strings.ToLower(r.Host)]
+		if !allowed {
 			fail(w, 403, "Host not allowed")
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			origin, err := url.Parse(r.Header.Get("Origin"))
 			mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-			if err != nil || origin.Scheme != "http" || !strings.EqualFold(origin.Host, r.Host) || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" || mediaType != "application/json" || r.Header.Get("X-Requested-With") != "rasppi-control-panel" {
+			if err != nil || origin.Scheme != scheme || !strings.EqualFold(origin.Host, r.Host) || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.ForceQuery || origin.Fragment != "" || mediaType != "application/json" || r.Header.Get("X-Requested-With") != "rasppi-control-panel" {
 				fail(w, 403, "Only requests from this panel are allowed")
 				return
 			}

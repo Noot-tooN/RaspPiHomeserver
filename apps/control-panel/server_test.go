@@ -221,7 +221,7 @@ func TestLiveUpdatesAndIdleMonitor(t *testing.T) {
 	server := httptest.NewServer(p.handler())
 	defer server.Close()
 	u, _ := url.Parse(server.URL)
-	p.hosts[u.Host] = true
+	p.origins[u.Host] = "http"
 	reqCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
 	defer stop()
 	req, _ := http.NewRequestWithContext(reqCtx, "GET", server.URL+"/api/events", nil)

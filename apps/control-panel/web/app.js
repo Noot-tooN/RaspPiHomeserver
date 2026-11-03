@@ -71,7 +71,7 @@ $('youtube-pair').addEventListener('click', async () => {
   pairingBusy = true; busy = true; render();
   pairingRetryAt = Date.now() + 15000;
   try {
-    const response = await fetch('/api/youtube/pairing', {
+    const response = await fetch('api/youtube/pairing', {
       method: 'POST', headers: {'Content-Type': 'application/json', 'X-Requested-With': 'rasppi-control-panel'},
       body: '{}', signal: AbortSignal.timeout(35000)
     });
@@ -118,14 +118,14 @@ $('volume').addEventListener('input', () => {
 $('volume').addEventListener('change', async () => {
   const volume = Number($('volume').value);
   dragging = false;
-  if (await change('/api/volume', {volume}, `Volume set to ${volume}%`)) {
+  if (await change('api/volume', {volume}, `Volume set to ${volume}%`)) {
     if (current?.audio) current.audio.volume = volume;
     render();
   }
 });
 $('mute').addEventListener('click', async () => {
   const muted = !current?.audio.muted;
-  if (await change('/api/mute', {muted}, muted ? 'Output muted' : 'Output unmuted')) {
+  if (await change('api/mute', {muted}, muted ? 'Output muted' : 'Output unmuted')) {
     if (current?.audio) current.audio.muted = muted;
     render();
   }
@@ -134,7 +134,7 @@ for (const button of document.querySelectorAll('[data-service]')) {
   button.addEventListener('click', async () => {
     const id = button.dataset.service;
     if (id === 'youtube') hidePairing();
-    if (await change('/api/restart', {service: id}, `${id === 'spotify' ? 'Spotify' : 'YouTube'} restart requested`)) {
+    if (await change('api/restart', {service: id}, `${id === 'spotify' ? 'Spotify' : 'YouTube'} restart requested`)) {
       restartUntil[id] = Date.now() + 5000;
       render();
       setTimeout(render, 5100);
@@ -147,7 +147,7 @@ function connect() {
   clearTimeout(staleTimer);
   if (document.hidden) { events = null; connected = false; render(); return; }
   connection(false);
-  events = new EventSource('/api/events');
+  events = new EventSource('api/events');
   events.onmessage = event => {
     try { current = JSON.parse(event.data); } catch { connection(false); return; }
     clearTimeout(staleTimer);
