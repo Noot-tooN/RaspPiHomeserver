@@ -1,0 +1,49 @@
+name: NixOS ARM64
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      build_image:
+        description: Build and upload a flashable SD image
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nixos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@d9186cbdca7adedf113a159fa91f725a27866771 # v31
+        with:
+          extra_nix_config: |
+            accept-flake-config = true
+            extra-substituters = https://nixos-raspberrypi.cachix.org
+            extra-trusted-public-keys = nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI=
+      - name: Verify expensive packages are cached
+        run: python3 scripts/check_cache.py
+      - name: Evaluate configuration and test receiver helpers
+        run: nix flake check --print-build-logs
+      - name: Build the system
+        run: nix build .#system --out-link result-system --print-build-logs
+      - name: Build SD image
+        if: github.event_name == 'workflow_dispatch' && inputs.build_image
+        run: nix build .#sd-image --out-link result-image --print-build-logs
+      - name: Upload SD image
+        if: github.event_name == 'workflow_dispatch' && inputs.build_image
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rasppi-sd-image
+          path: result-image/sd-image/*.img.zst
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
