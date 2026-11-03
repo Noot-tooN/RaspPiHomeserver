@@ -41,7 +41,10 @@ in
     # Do not silently run unbounded after booting an older kernel command line.
     ExecCondition = "${pkgs.gnugrep}/bin/grep -qw memory /sys/fs/cgroup/cgroup.controllers";
   };
-  systemd.services.nix-daemon.serviceConfig = backgroundService;
+  systemd.services.nix-daemon.serviceConfig = {
+    inherit (backgroundService) Slice Nice;
+  };
+  nix.daemonIOSchedClass = "idle";
   systemd.services.nix-gc.serviceConfig = backgroundService;
 
   # Substitutions otherwise default to 16 parallel downloads/unpacks. Store
