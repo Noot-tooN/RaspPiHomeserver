@@ -14,6 +14,7 @@ This is a migration from an audited Raspberry Pi OS installation. Software build
 - SSH using the existing public key in `keys/pita.pub`; password login is disabled. `pita` has passwordless sudo for key-based administration. No password is embedded in the image.
 - Wi-Fi provisioning after flashing, or Ethernet DHCP. Credentials never enter Git or the Nix store.
 - Comin automatically follows `https://github.com/Noot-tooN/RaspPiHomeserver.git`, branch `master`, configuration `rasppi`.
+- Tailscale matches HomeServer's network-only setup: normal SSH keys, Tailscale SSH disabled, client routing support, and a trusted `tailscale0` interface. LAN SSH remains available for first boot and recovery.
 
 Mopidy/Iris, Xpra, a desktop login, and the separate standalone PulseAudio daemon are intentionally omitted. [Migration decisions](docs/migration.md) describe the differences from the old installation.
 
@@ -36,7 +37,7 @@ The GitHub Actions workflow runs on a native ARM64 runner and checks the cache, 
 
 ### Build times and caches
 
-The cache check verifies the exact pinned kernel, kernel modules, firmware, Brave, librespot, PipeWire, WirePlumber and Xvfb outputs against `cache.nixos.org` and the Pi project's Cachix cache. It fails if a target is absent or the caches cannot be reached. It does not certify every transitive dependency.
+The cache check verifies the exact pinned kernel, kernel modules, firmware, Brave, librespot, PipeWire, WirePlumber, Xvfb and Tailscale outputs against `cache.nixos.org` and the Pi project's Cachix cache. It fails if a target is absent or the caches cannot be reached. It does not certify every transitive dependency.
 
 Comin is built from its pinned source. It is included in the image, so ordinary configuration changes reuse it; changing its version or dependencies can require another Go build. Generated units, scripts, initrds, and image assembly still run locally. The receiver-name change does not rebuild Brave. We avoid the Pi project's global multimedia overrides, which would cause additional rebuilds.
 
@@ -64,6 +65,36 @@ ssh -N -L 9222:127.0.0.1:9222 pita@rasppi.local
 ```
 
 In a local Chromium/Brave browser, open `chrome://inspect/#devices` (or `brave://inspect/#devices`), configure `localhost:9222`, and inspect the receiver tab. DevTools' screencast lets you operate its account and pairing screens. The debugging endpoint is bound to loopback and is not opened in the firewall. Do not expose it to the LAN: it controls the logged-in browser.
+
+## Tailscale enrollment
+
+Tailscale is installed and starts on boot, but the image contains no auth key or
+node identity. After the first LAN SSH login, run:
+
+```sh
+sudo tailscale up --ssh=false
+```
+
+Open the printed login URL and join the same tailnet as HomeServer. Then use
+`tailscale ip -4` to obtain the Pi's address and connect with
+`ssh pita@<tailscale-ip>` using your existing SSH key. With MagicDNS enabled,
+`rasppi` is also available as a tailnet hostname. Tailscale SSH stays disabled;
+OpenSSH provides authentication over either network.
+
+For HomeServer-style unattended enrollment instead, provision a separate auth
+key for this Pi at `/etc/tailscale/authkey` (root-owned, mode `0600`, outside Git
+and the Nix store), then run `sudo systemctl start tailscaled-autoconnect`.
+Without that file the enrollment service is skipped. Existing node identity is
+stored under `/var/lib/tailscale` and persists across reboots and Comin updates.
+Do not copy HomeServer's node state to the Pi.
+
+The Tailscale package uses the same initial `nixpkgs-unstable` lock entry as
+HomeServer, independently of the cached Pi kernel package set. It will follow
+this repository's future lock updates; it does not dynamically follow
+HomeServer. Like HomeServer, the firewall trusts the Tailscale interface; tailnet
+access rules still govern connectivity. Unlike HomeServer, this Pi also keeps
+LAN SSH open for initial setup and recovery. Client routing support does not
+advertise this Pi as an exit node or subnet router.
 
 ## Updates and recovery
 

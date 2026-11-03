@@ -8,6 +8,7 @@
   imports = [
     ./hardware.nix
     ../../modules/network.nix
+    ../../modules/tailscale.nix
     ../../modules/audio.nix
     ../../modules/spotify.nix
     ../../modules/youtube.nix
