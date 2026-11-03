@@ -34,7 +34,16 @@ The first cache-check invocation may need `accept-flake-config = true` in your N
 
 The image is under `result-image/sd-image/*.img.zst`. Decompress it with `zstd -d`, then flash the resulting `.img` to a **spare** SD card using an imaging tool. A normal Comin update rebuilds the system generation, not the SD image.
 
-The GitHub Actions workflow runs on a native ARM64 runner and checks the cache, tests, and complete system build. Its manual `build_image` input additionally uploads a flashable image artifact, retained for seven days. No CI job deploys to the running Pi.
+SD images are bootstrap/recovery artifacts. Build one manually on an **aarch64-linux** PC or Linux VM when preparing a card:
+
+```sh
+nix --accept-flake-config build .#sd-image --out-link result-image
+zstd -t result-image/sd-image/*.img.zst
+```
+
+Keep the verified image outside Git. Normal updates do not require another image or reflashing.
+
+The GitHub Actions workflow runs on a native ARM64 runner and checks the cache, tests, and complete system build. It does not build or upload SD images, including on manual runs. No CI job deploys to the running Pi.
 
 ### Build times and caches
 
