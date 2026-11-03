@@ -12,8 +12,6 @@ let
         if [ -e /run/rasppi-dac/ready ] &&
            pactl list short sinks | awk '$2 == "rasppi-dac" { found=1 } END { exit !found }'; then
           pactl set-default-sink rasppi-dac
-          pactl set-sink-volume rasppi-dac 40%
-          pactl set-sink-mute rasppi-dac 0
           exit 0
         fi
         sleep 1
@@ -38,6 +36,9 @@ in
       };
     };
     wireplumber.extraConfig."10-dac-pro" = {
+      # Let WirePlumber save and restore software volume and mute per device route.
+      # Its default volume applies only when that route has no saved state yet.
+      "wireplumber.settings"."device.restore-routes" = true;
       "monitor.alsa.rules" = [
         {
           matches = [ { "device.name" = "alsa_card.platform-soc_sound"; } ];
@@ -86,7 +87,7 @@ in
   };
 
   systemd.user.services.rasppi-audio-ready = {
-    description = "Wait for the DAC and establish boot volume";
+    description = "Wait for the DAC and select the playback sink";
     requires = [
       "pipewire-pulse.service"
       "wireplumber.service"

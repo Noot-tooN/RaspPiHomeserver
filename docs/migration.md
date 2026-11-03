@@ -7,7 +7,7 @@ Baseline: read-only audit on 2026-11-03 of Raspberry Pi OS on a Pi 4 Model B Rev
 | Raspotify wraps librespot 0.8.0 | Use the stock librespot package directly as a `pita` user service. Preserve PulseAudio backend, normalization, disabled caches and `/tmp` buffering. Keep useful journal logging instead of quiet mode. |
 | Raspotify runs as `pita`, reaches UID 1000's Pulse socket | Both receivers run in `pita`'s lingering systemd user manager and use PipeWire's Pulse socket. No desktop or autologin is needed. |
 | Browser startup sets the default sink and can race DAC discovery | A shared readiness service waits for the restored DAC and actual sink. WirePlumber gives the platform sound device a fixed node name. |
-| PipeWire at 48 kHz; observed software volume 40% | Pin the clock rate and explicitly initialize the sink to 40% at user-session startup. Source volume remains separately adjustable. |
+| PipeWire at 48 kHz; observed software volume 40% | Pin the clock rate and let WirePlumber restore the last-used software volume and mute state. The observed 40% is not imposed at every startup; WirePlumber's standard 40% fallback is used only without saved route volume. Source volume remains separately adjustable. |
 | Hardware mixer at 0 dB, de-emphasis on, custom ramps/mutes | Restore only the audited `state.Pro` block from `hardware/dac-pro.state`. Select by ALSA card ID, never numeric index. Use software volume rather than changing DAC gain. |
 | HAT EEPROM supplies the DAC device tree | Explicit `rpi-dacpro` vendor overlay, with EEPROM auto-read disabled to avoid applying two descriptions. Use the matching cached vendor kernel/firmware bundle. Requires physical validation. |
 | `/etc/asound.conf` bypasses PipeWire and opens the DAC directly | ALSA clients use PipeWire's compatibility layer. The old direct-hardware default is intentionally not carried over; it could contend with the shared sound server. |
@@ -29,6 +29,7 @@ Persistent state is separate from the reproducible system: browser account sessi
 - YouTube pairs as `RaspPi` and plays through the DAC. No display is required.
 - Switching sources, reconnecting Wi-Fi, and restarting either receiver do not lose sound routing.
 - A reboot preserves browser state and the name override.
+- Changing the master volume or mute state, then restarting the audio session or rebooting, restores that state without forcing 40% or unmuting. Verify this separately from each application's own volume control.
 - One small Git update is activated by Comin; recovery and reboot behavior are checked.
 
 These are acceptance steps, not claims of completed hardware tests.
