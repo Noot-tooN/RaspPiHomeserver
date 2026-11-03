@@ -35,7 +35,7 @@ function render() {
   $('muted-label').hidden = !audio?.available || !audio.muted;
   $('mute').textContent = audio?.muted ? 'Unmute output' : 'Mute output';
   $('mute').setAttribute('aria-pressed', String(Boolean(audio?.muted)));
-  $('volume-note').textContent = !connected ? 'Reconnecting to your Pi. Controls will return automatically.' : !audio?.available ? (audio?.error || 'Waiting for audio state…') : audio.volume > 100 ? 'Saved volume is above 100%. This control sets 0–100%.' : 'Your volume and mute setting are remembered.';
+  $('volume-note').textContent = !connected ? 'Reconnecting to your Pi. Controls will return automatically.' : !audio?.available ? (audio?.error || 'Waiting for audio state…') : audio.volume > 100 ? 'Saved volume is above 100%. This control sets 0–100%.' : 'Volume and mute are saved automatically';
 
   for (const id of ['spotify', 'youtube']) {
     const service = current?.services.find(s => s.id === id);
@@ -43,10 +43,10 @@ function render() {
     if (!connected) { label = 'Offline'; detail = 'Waiting for connection'; }
     else if (Date.now() < restartUntil[id]) { label = 'Restarting'; style = 'warning'; detail = 'Restart requested. Checking service…'; }
     else if (service && !service.error) {
-      if (service.active === 'active') { label = 'Running'; style = ''; detail = id === 'spotify' ? 'Spotify Connect service is running.' : 'YouTube receiver service is running.'; }
-      else if (['activating', 'deactivating', 'reloading'].includes(service.active)) { label = 'Starting / stopping'; style = 'warning'; detail = 'The app is changing state.'; }
+      if (service.active === 'active') { label = 'Running'; style = ''; detail = id === 'spotify' ? 'Spotify Connect service is running' : 'YouTube receiver service is running'; }
+      else if (['activating', 'deactivating', 'reloading'].includes(service.active)) { label = 'Starting / stopping'; style = 'warning'; detail = 'The app is changing state'; }
       else if (service.active === 'failed') { label = 'Failed'; style = 'error'; detail = 'The service stopped with an error. Try restarting it.'; }
-      else { label = 'Stopped'; style = 'neutral'; detail = 'Restart the app to bring it back online.'; }
+      else { label = 'Stopped'; style = 'neutral'; detail = 'Restart to bring this service online'; }
     } else if (service?.error) { detail = service.error; }
     $(id + '-status').textContent = label;
     $(id + '-status').className = `badge ${style}`;
