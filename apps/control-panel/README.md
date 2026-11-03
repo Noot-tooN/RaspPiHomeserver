@@ -4,6 +4,8 @@ One Go executable embeds the HTML, CSS and JavaScript. It uses the standard
 library only and builds with `CGO_ENABLED=0`. The operating system supplies
 `pactl`, `systemctl`, PipeWire and the receiver services; these are not bundled
 inside the executable.
+TV pairing uses a small helper with the same Python/websockets runtime already
+used by the YouTube receiver. It adds no Go dependency or always-running service.
 
 ## Development
 
@@ -46,6 +48,15 @@ its interface's IPv4 address and restarts if that address changes. The exact
 HTTP host allowlist and same-origin JSON/custom-header checks protect against
 browser-based cross-site requests and DNS rebinding. There is no general shell,
 log viewer, browser remote control, or arbitrary systemd API.
+
+`POST /api/youtube/pairing` accepts only an empty JSON object, shares the action
+lock and same-origin checks, and has a 15-second cooldown. Its fixed helper can
+only open the local receiver's TV-code screen. It handles guest setup and
+returns a validated 12-digit TV code, never a Google account sign-in code or
+browser contents. The request has a bounded 28-second execution time. Codes
+are excluded from the shared event stream, logs, browser storage and caches;
+the UI hides them after five minutes. A YouTube UI change can make extraction
+fail, in which case the panel reports the failure without returning page data.
 
 The standalone executable defaults to loopback port 8090. `--help` lists the
 listen address, interface, allowed hostnames, sink and command-path options.

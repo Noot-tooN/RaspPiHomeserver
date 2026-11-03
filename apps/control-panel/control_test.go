@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -96,5 +98,30 @@ func TestCommandOutputIsBounded(t *testing.T) {
 	}
 	if _, err := output.Write([]byte("extra")); err == nil {
 		t.Fatal("output exceeded limit")
+	}
+}
+
+func TestPairingHelperAcceptsOnlyNumericTVCodes(t *testing.T) {
+	for _, tt := range []struct {
+		output string
+		valid  bool
+	}{
+		{`{"code":"012345678901"}`, true},
+		{`{"code":"ABC-DEF-GHIJ"}`, false},
+		{`{"code":"0123456789012"}`, false},
+		{`{"error":"private account data"}`, false},
+		{`not json`, false},
+	} {
+		t.Run(tt.output, func(t *testing.T) {
+			helper := filepath.Join(t.TempDir(), "pairing")
+			if err := os.WriteFile(helper, []byte("#!/bin/sh\nprintf '%s\\n' '"+tt.output+"'\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			c := systemController{pairingCommand: helper}
+			result, err := c.PairYouTube(context.Background())
+			if (err == nil) != tt.valid || (tt.valid && result.Code != "012345678901") || (!tt.valid && result.Code != "") {
+				t.Fatalf("unexpected code validation: %+v, %v", result, err)
+			}
+		})
 	}
 }

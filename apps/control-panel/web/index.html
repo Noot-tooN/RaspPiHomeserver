@@ -38,6 +38,16 @@
           <div class="app-heading"><div><h3 id="youtube-title">YouTube</h3><p>YouTube TV receiver</p></div><span id="youtube-status" class="badge neutral">Checking</span></div>
           <p id="youtube-detail" class="app-detail">Waiting for service state…</p>
           <button id="youtube-restart" class="button restart" data-service="youtube" type="button" disabled>Restart YouTube</button>
+          <div class="pairing">
+            <button id="youtube-pair" class="button" type="button" aria-describedby="pairing-note" disabled>Link phone</button>
+            <p id="pairing-note">Show a TV code to connect the YouTube app on your phone. This can interrupt YouTube playback.</p>
+            <div id="pairing-result" aria-live="polite" hidden>
+              <p class="eyebrow">YouTube TV code</p>
+              <output id="pairing-code" aria-label="YouTube TV code"></output>
+              <p>On your phone, open YouTube → Cast → Link with TV code, then enter these numbers.</p>
+              <button id="pairing-hide" class="button" type="button">Hide code</button>
+            </div>
+          </div>
         </article>
       </div>
       <p class="section-note">Restarting interrupts playback. Running means the service is active, not that a device is casting.</p>

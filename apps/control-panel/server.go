@@ -26,6 +26,7 @@ type panel struct {
 	clients     map[chan []byte]bool
 	wake        chan struct{}
 	lastRestart map[string]time.Time
+	lastPairing time.Time
 }
 
 func newPanel(c controller, authorities []string) *panel {
@@ -145,6 +146,25 @@ func (p *panel) action(w http.ResponseWriter, r *http.Request) {
 	}
 	var err error
 	switch r.URL.Path {
+	case "/api/youtube/pairing":
+		var input struct{}
+		if !decode(w, r, &input) {
+			return
+		}
+		if time.Since(p.lastPairing) < 15*time.Second {
+			fail(w, 429, "A code was just requested. Wait a few seconds before trying again.")
+			return
+		}
+		p.lastPairing = time.Now()
+		// Opening TV settings can take longer than a volume/status command.
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(32 * time.Second))
+		code, pairingErr := p.control.PairYouTube(r.Context())
+		if pairingErr != nil || !tvCodePattern.MatchString(code.Code) {
+			fail(w, 503, "Could not get a TV code. Wait for YouTube to load and try again.")
+			return
+		}
+		jsonReply(w, http.StatusOK, code)
+		return
 	case "/api/volume":
 		var input struct {
 			Volume *int `json:"volume"`
@@ -204,7 +224,7 @@ func (p *panel) handler() http.Handler {
 	assets, _ := fs.Sub(web, "web")
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/events", p.events)
-	for _, route := range []string{"/api/volume", "/api/mute", "/api/restart"} {
+	for _, route := range []string{"/api/volume", "/api/mute", "/api/restart", "/api/youtube/pairing"} {
 		mux.HandleFunc("POST "+route, p.action)
 	}
 	files := http.FileServer(http.FS(assets))

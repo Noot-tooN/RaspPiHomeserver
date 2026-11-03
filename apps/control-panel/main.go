@@ -41,6 +41,7 @@ func main() {
 	sink := flag.String("sink", "rasppi-dac", "PipeWire/PulseAudio sink name")
 	pactl := flag.String("pactl", "pactl", "Path to pactl")
 	systemctl := flag.String("systemctl", "systemctl", "Path to systemctl")
+	pairing := flag.String("youtube-pairing", "", "Path to the YouTube TV-code helper")
 	flag.Parse()
 	host, port, err := net.SplitHostPort(*listen)
 	if err != nil {
@@ -62,7 +63,7 @@ func main() {
 			authorities = append(authorities, net.JoinHostPort(name, port))
 		}
 	}
-	control := &systemController{pactl: *pactl, systemctl: *systemctl, sink: *sink, run: runCommand}
+	control := &systemController{pactl: *pactl, systemctl: *systemctl, sink: *sink, pairingCommand: *pairing, run: runCommand}
 	p := newPanel(control, authorities)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

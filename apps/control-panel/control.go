@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -53,7 +54,14 @@ type controller interface {
 	Volume(context.Context, int) error
 	Mute(context.Context, bool) error
 	Restart(context.Context, string) error
+	PairYouTube(context.Context) (pairingCode, error)
 }
+
+type pairingCode struct {
+	Code string `json:"code"`
+}
+
+var tvCodePattern = regexp.MustCompile(`^[0-9]{12}$`)
 
 type commandRunner func(context.Context, string, ...string) ([]byte, error)
 
@@ -69,7 +77,11 @@ func (b *limitedOutput) Write(p []byte) (int, error) {
 }
 
 func runCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	return runWithTimeout(ctx, 3*time.Second, name, args...)
+}
+
+func runWithTimeout(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	var output limitedOutput
@@ -83,7 +95,23 @@ func runCommand(ctx context.Context, name string, args ...string) ([]byte, error
 
 type systemController struct {
 	pactl, systemctl, sink string
+	pairingCommand         string
 	run                    commandRunner
+}
+
+func (c *systemController) PairYouTube(ctx context.Context) (pairingCode, error) {
+	var result pairingCode
+	if c.pairingCommand == "" {
+		return result, errors.New("pairing helper is not configured")
+	}
+	data, err := runWithTimeout(ctx, 28*time.Second, c.pairingCommand)
+	if err != nil {
+		return result, err
+	}
+	if json.Unmarshal(data, &result) != nil || !tvCodePattern.MatchString(result.Code) {
+		return pairingCode{}, errors.New("invalid TV pairing code")
+	}
+	return result, nil
 }
 
 func (c *systemController) State(ctx context.Context) state {
