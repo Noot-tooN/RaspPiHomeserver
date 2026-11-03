@@ -8,7 +8,7 @@ This is a migration from an audited Raspberry Pi OS installation. Software build
 
 - A matched Pi kernel/firmware bundle from [nixos-raspberrypi](https://github.com/nvmd/nixos-raspberrypi), pinned in `flake.lock`, with its binary cache.
 - The `rpi-dacpro` firmware overlay and the audited DAC mixer state, including de-emphasis.
-- PipeWire and WirePlumber in the persistent `pita` user session. Both receivers use the named `rasppi-dac` sink; boot volume is explicitly 40%.
+- PipeWire and WirePlumber in the persistent `pita` user session. Both receivers use the named `rasppi-dac` sink; WirePlumber restores the last-used software volume and mute state. Its standard 40% fallback applies only when no saved device-route volume exists.
 - Librespot with PulseAudio output, normalization enabled, audio/credential caching disabled, and a fixed discovery port.
 - Brave under Xvfb, with the existing TV user agent, a persistent profile, the verified receiver-name hook, and recovery from an empty/crashed page.
 - SSH using the existing public key in `keys/pita.pub`; password login is disabled. `pita` has passwordless sudo for key-based administration. No password is embedded in the image.
@@ -65,6 +65,13 @@ ssh -N -L 9222:127.0.0.1:9222 pita@rasppi.local
 ```
 
 In a local Chromium/Brave browser, open `chrome://inspect/#devices` (or `brave://inspect/#devices`), configure `localhost:9222`, and inspect the receiver tab. DevTools' screencast lets you operate its account and pairing screens. The debugging endpoint is bound to loopback and is not opened in the firewall. Do not expose it to the LAN: it controls the logged-in browser.
+
+Volume and mute are saved in `pita`'s WirePlumber state under
+`/home/pita/.local/state/wireplumber/`. They survive normal reboots and system
+updates. A fresh card without restored state starts with WirePlumber's default
+volume; it cannot inherit the old card's last-used volume automatically. The
+readiness service selects the DAC but does not reset its software volume or
+unmute it. The audited hardware mixer settings are still restored separately.
 
 ## Tailscale enrollment
 
