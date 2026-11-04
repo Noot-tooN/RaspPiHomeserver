@@ -37,3 +37,20 @@ test('uses native controls and enforces volume range', () => {
 test('rejects a different browser page before any operation', () => {
   const f = fixture({}, 'https://example.com'); assert.throws(() => f.control({action: 'state'})); assert.deepEqual(f.calls, []);
 });
+
+test('explicit load starts a validated video even when idle; polling does not', () => {
+  const loaded = [];
+  const f = fixture({getVideoData: () => ({}), loadVideoById: input => loaded.push(input)});
+  assert.ok(f.control({action: 'state'}).capabilities.includes('load'));
+  assert.equal(loaded.length, 0);
+  assert.equal(f.control({action: 'load', videoId: '-abcdefghij'}).accepted, true);
+  assert.equal(loaded[0].videoId, '-abcdefghij');
+  assert.equal(loaded[0].startSeconds, 0);
+  for (const videoId of [undefined, '', 'short', 'https://youtu.be/abcdefghijk', 'abcdefghij;', 123]) {
+    assert.throws(() => f.control({action: 'load', videoId}));
+  }
+  assert.equal(loaded.length, 1);
+  const unavailable = fixture();
+  assert.throws(() => unavailable.control({action: 'load', videoId: 'abcdefghijk'}));
+  assert.deepEqual(unavailable.calls, []);
+});

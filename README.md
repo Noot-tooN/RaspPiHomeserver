@@ -143,6 +143,11 @@ Host, Origin, and forwarding headers do not bypass those checks.
 - Adjust Spotify and YouTube's own volumes independently of the master DAC.
   Play/pause and previous/next operate on the current session; opening the panel
   never starts playback. Spotify controls require an active Connect session.
+  Paste a YouTube video link into the YouTube card and choose **Play on RaspPi**
+  to start it from your laptop without phone pairing. Regular watch links,
+  `youtu.be`, Shorts, and live-video links are supported. This replaces the
+  current YouTube video and starts from the beginning; playlist and timestamp
+  parameters are ignored. Only the validated video ID reaches the receiver.
   YouTube previous/next require a playlist exposed by the TV player; unsupported
   controls stay disabled. A volume change does not unmute YouTube if it was muted
   in the YouTube app.

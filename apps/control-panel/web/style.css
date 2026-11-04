@@ -180,3 +180,13 @@ footer { display: flex; justify-content: space-between; align-items: center; gap
 .player-volume-label { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; color: var(--secondary); }
 .player-volume-label output { font-variant-numeric: tabular-nums; }
 .player-note { font-size: 12px; line-height: 18px; color: var(--muted); margin: 4px 0 0; min-height: 36px; }
+
+.youtube-link-form { display: grid; gap: 8px; margin: 20px 0; }
+.youtube-link-form label { font-size: 13px; color: var(--secondary); }
+.youtube-link-form input {
+  width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px;
+  font: inherit; font-size: 14px; color: var(--text); background: var(--page);
+  border: 1px solid var(--control-border); border-radius: 4px;
+}
+.youtube-link-form input::placeholder { color: var(--muted); }
+.youtube-link-form .player-note { margin: 0; }
