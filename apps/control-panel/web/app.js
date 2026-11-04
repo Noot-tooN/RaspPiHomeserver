@@ -40,35 +40,40 @@ function render() {
     $('volume').style.setProperty('--position', `${$('volume').value}%`);
     $('volume').setAttribute('aria-valuetext', ready ? `${audio.volume} percent` : 'Unavailable');
   }
-  $('muted-label').hidden = !audio?.available || !audio.muted;
-  $('mute').textContent = audio?.muted ? 'Unmute output' : 'Mute output';
+  $('audio-status').hidden = ready;
+  $('mute').textContent = audio?.muted ? 'Unmute' : 'Mute';
   $('mute').setAttribute('aria-pressed', String(Boolean(audio?.muted)));
-  $('volume-note').textContent = !connected ? 'Reconnecting to your Pi. Controls will return automatically.' : !audio?.available ? (audio?.error || 'Waiting for audio state…') : audio.volume > 100 ? 'Saved volume is above 100%. This control sets 0–100%.' : 'Volume and mute are saved automatically';
+  $('volume-note').textContent = !connected ? 'Reconnecting to your Pi. Controls will return automatically.' : !audio?.available ? (audio?.error || 'Waiting for audio state…') : audio.volume > 100 ? 'Saved volume is above 100%. This control sets 0–100%.' : '';
+  $('volume-note').hidden = !$('volume-note').textContent;
 
   for (const id of ['spotify', 'youtube']) {
     const service = current?.services.find(s => s.id === id);
-    let label = 'Unknown', style = 'neutral', detail = 'Service status unavailable';
-    if (!connected) { label = 'Offline'; detail = 'Waiting for connection'; }
-    else if (Date.now() < restartUntil[id]) { label = 'Restarting'; style = 'warning'; detail = 'Restart requested. Checking service…'; }
+    const player = current?.players?.find(p => p.id === id);
+    let label = 'Unknown', style = 'neutral', detail = '';
+    if (!connected) { label = 'Offline'; }
+    else if (Date.now() < restartUntil[id]) { label = 'Restarting'; style = 'warning'; }
     else if (service && !service.error) {
-      if (service.active === 'active') { label = 'Running'; style = ''; detail = id === 'spotify' ? 'Spotify Connect service is running' : 'YouTube receiver service is running'; }
-      else if (['activating', 'deactivating', 'reloading'].includes(service.active)) { label = 'Starting / stopping'; style = 'warning'; detail = 'The app is changing state'; }
-      else if (service.active === 'failed') { label = 'Failed'; style = 'error'; detail = 'The service stopped with an error. Try restarting it.'; }
-      else { label = 'Stopped'; style = 'neutral'; detail = 'Restart to bring this service online'; }
-    } else if (service?.error) { detail = service.error; }
+      if (service.active === 'active') {
+        if (player?.available) { label = player.active ? (player.paused ? 'Paused' : 'Playing') : 'Ready'; style = player.active && !player.paused ? '' : 'neutral'; }
+        else { label = 'Unavailable'; style = 'warning'; detail = player?.error || 'Waiting for the player'; }
+      } else if (['activating', 'deactivating', 'reloading'].includes(service.active)) { label = 'Starting'; style = 'warning'; }
+      else if (service.active === 'failed') { label = 'Failed'; style = 'error'; detail = 'Open Service controls below to restart'; }
+      else { label = 'Stopped'; detail = 'Open Service controls below to restart'; }
+    } else { detail = service?.error || 'Service status unavailable'; }
     $(id + '-status').textContent = label;
     $(id + '-status').className = `badge ${style}`;
     $(id + '-detail').textContent = detail;
+    $(id + '-detail').hidden = !detail;
     $(id + '-restart').disabled = !connected || busy || !service || Boolean(service.error) || Date.now() < restartUntil[id];
   }
   renderPlayers();
   const youtube = current?.services.find(s => s.id === 'youtube');
   const youtubePlayer = current?.players?.find(p => p.id === 'youtube');
-  const canLoad = connected && !busy && youtubePlayer?.available && youtubePlayer.capabilities?.includes('load');
+  const canLoad = connected && !busy && youtube?.active === 'active' && !youtube.error && Date.now() >= restartUntil.youtube && youtubePlayer?.available && youtubePlayer.capabilities?.includes('load');
   $('youtube-url').disabled = !canLoad;
   $('youtube-load').disabled = !canLoad;
   $('youtube-pair').disabled = !connected || busy || youtube?.active !== 'active' || Boolean(youtube?.error) || Date.now() < pairingRetryAt;
-  $('youtube-pair').textContent = pairingBusy ? 'Getting code…' : 'Link phone';
+  $('youtube-pair').textContent = pairingBusy ? 'Getting code…' : 'Get TV code';
 }
 
 $('youtube-link-form').addEventListener('submit', async event => {
@@ -162,15 +167,24 @@ for (const button of document.querySelectorAll('[data-service]')) {
 function renderPlayers() {
   for (const id of ['spotify', 'youtube']) {
     const player = current?.players?.find(p => p.id === id);
-    const available = connected && player?.available;
+    const service = current?.services.find(s => s.id === id);
+    const available = connected && service?.active === 'active' && !service.error && Date.now() >= restartUntil[id] && player?.available;
     const capabilities = available ? player.capabilities || [] : [];
     const can = action => !busy && capabilities.includes(action);
-    $(id + '-track').textContent = !connected ? 'Waiting for connection' : !available ? (player?.error || 'Player unavailable') : player.title || (id === 'spotify' ? 'Choose RaspPi in Spotify' : 'Cast a video to RaspPi');
+    const track = $(id + '-track');
+    track.textContent = !connected ? 'Waiting for connection' : player?.title || (id === 'spotify' ? 'Choose RaspPi in Spotify to start listening' : 'Paste a link below or cast from your phone');
+    track.hidden = connected && !available;
+    track.classList.toggle('is-idle', !player?.active);
+    track.title = player?.title || '';
     const playback = $(id + '-playback');
     playback.dataset.action = player?.paused ? 'play' : 'pause';
     playback.textContent = player?.active && !player.paused ? 'Pause' : 'Play';
     playback.disabled = !can(playback.dataset.action);
-    for (const action of ['previous', 'next']) $(id + '-' + action).disabled = !can(action);
+    for (const action of ['previous', 'next']) {
+      const button = $(id + '-' + action);
+      button.disabled = !can(action);
+      button.title = id === 'youtube' && !capabilities.includes(action) ? 'YouTube has not exposed a queue to skip through' : '';
+    }
     const slider = $(id + '-volume');
     slider.disabled = !can('volume');
     if (!playerDragging.has(id)) {
@@ -180,7 +194,8 @@ function renderPlayers() {
       slider.setAttribute('aria-valuetext', known ? `${player.volume} percent` : 'Unavailable');
       $(id + '-volume-value').textContent = known ? `${player.volume}%` : '—';
     }
-    $(id + '-player-note').textContent = !available ? 'Controls return when the player is available.' : player.muted ? 'Muted in YouTube. Unmute from the YouTube app.' : !player.active ? `Choose something in ${id === 'spotify' ? 'Spotify' : 'YouTube'} to enable playback controls.` : id === 'youtube' && !capabilities.includes('next') && !capabilities.includes('previous') ? 'YouTube has not exposed a playlist to skip through.' : 'Player volume is separate from the master volume.';
+    $(id + '-player-note').textContent = available && player.muted ? 'Muted in YouTube · unmute from the YouTube app' : '';
+    $(id + '-player-note').hidden = !$(id + '-player-note').textContent;
   }
 }
 

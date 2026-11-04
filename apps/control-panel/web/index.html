@@ -11,78 +11,87 @@
 </head>
 <body>
   <main>
-    <header>
-      <a class="brand" href="/" aria-label="RaspPi home">RaspPi<span class="brand-note">Home audio</span></a>
+    <header class="page-header">
+      <div class="page-identity"><a class="brand" href="/" aria-label="RaspPi home">RaspPi</a><span class="header-divider" aria-hidden="true"></span><h1>Audio</h1></div>
       <span id="connection" class="connection"><span class="dot"></span><span id="connection-text">Connecting</span></span>
     </header>
 
-    <div class="intro"><h1>Audio controls</h1><p>Volume and casting services on RaspPi</p></div>
-
-    <section class="volume-card" aria-labelledby="volume-title">
-      <div class="card-top"><div><p class="eyebrow">DAC Pro</p><h2 id="volume-title">Master volume</h2></div><span id="audio-status" class="badge neutral">Checking audio</span></div>
-      <div class="volume-reading"><span id="volume-value">—</span><span class="volume-unit">%</span><span id="muted-label" hidden>Muted</span></div>
+    <section class="master-panel" aria-labelledby="volume-title">
+      <div class="master-heading">
+        <div><h2 id="volume-title">Master volume</h2><span id="audio-status" class="badge neutral" hidden>Checking audio</span></div>
+        <div class="master-actions"><div class="volume-reading"><span id="volume-value">—</span><span class="volume-unit">%</span></div><button id="mute" class="button mute-button" type="button" aria-pressed="false" disabled>Mute</button></div>
+      </div>
       <div class="slider-row"><input id="volume" type="range" min="0" max="100" step="1" value="0" aria-label="Master volume" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
-      <div class="range-labels"><span>0%</span><span>100%</span></div>
-      <div class="volume-bottom"><p id="volume-note">Waiting for audio state…</p><button id="mute" class="button mute-button" type="button" aria-pressed="false" disabled>Mute output</button></div>
+      <p id="volume-note" class="state-note" hidden></p>
     </section>
 
-    <section aria-labelledby="apps-title" class="apps-section">
-      <div class="section-heading"><h2 id="apps-title">Casting services</h2></div>
-      <div class="apps-grid">
-        <article class="app-card" aria-labelledby="spotify-title">
-          <div class="app-heading"><div><h3 id="spotify-title">Spotify</h3><p>Spotify Connect</p></div><span id="spotify-status" class="badge neutral">Checking</span></div>
-          <p id="spotify-detail" class="app-detail">Waiting for service state…</p>
+    <section class="players-section" aria-labelledby="players-title">
+      <h2 id="players-title" class="section-title">Players</h2>
+      <div class="players-grid">
+        <article class="player-card" aria-labelledby="spotify-title">
+          <div class="player-heading"><h3 id="spotify-title">Spotify</h3><span id="spotify-status" class="badge neutral">Checking</span></div>
+          <p id="spotify-detail" class="state-note" hidden></p>
           <div class="player-controls" aria-label="Spotify playback">
             <p id="spotify-track" class="track">Waiting for player state…</p>
             <div class="transport">
               <button id="spotify-previous" class="button" data-player="spotify" data-action="previous" type="button" disabled>Previous</button>
-              <button id="spotify-playback" class="button" data-player="spotify" data-action="play" type="button" disabled>Play</button>
+              <button id="spotify-playback" class="button playback-button" data-player="spotify" data-action="play" type="button" disabled>Play</button>
               <button id="spotify-next" class="button" data-player="spotify" data-action="next" type="button" disabled>Next</button>
             </div>
-            <div class="player-volume-label"><label for="spotify-volume">Spotify volume</label><output id="spotify-volume-value">—</output></div>
-            <div class="slider-row"><input id="spotify-volume" type="range" min="0" max="100" step="1" value="0" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
-            <p id="spotify-player-note" class="player-note">Choose RaspPi in Spotify to begin.</p>
+            <div class="level-label"><label for="spotify-volume">Volume</label><output id="spotify-volume-value">—</output></div>
+            <div class="slider-row"><input id="spotify-volume" type="range" min="0" max="100" step="1" value="0" aria-label="Spotify volume" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
+            <p id="spotify-player-note" class="state-note" hidden></p>
           </div>
-          <button id="spotify-restart" class="button restart" data-service="spotify" type="button" disabled>Restart Spotify</button>
         </article>
-        <article class="app-card" aria-labelledby="youtube-title">
-          <div class="app-heading"><div><h3 id="youtube-title">YouTube</h3><p>YouTube TV receiver</p></div><span id="youtube-status" class="badge neutral">Checking</span></div>
-          <p id="youtube-detail" class="app-detail">Waiting for service state…</p>
+        <article class="player-card" aria-labelledby="youtube-title">
+          <div class="player-heading"><h3 id="youtube-title">YouTube</h3><span id="youtube-status" class="badge neutral">Checking</span></div>
+          <p id="youtube-detail" class="state-note" hidden></p>
           <div class="player-controls" aria-label="YouTube playback">
             <p id="youtube-track" class="track">Waiting for player state…</p>
             <div class="transport">
               <button id="youtube-previous" class="button" data-player="youtube" data-action="previous" type="button" disabled>Previous</button>
-              <button id="youtube-playback" class="button" data-player="youtube" data-action="play" type="button" disabled>Play</button>
+              <button id="youtube-playback" class="button playback-button" data-player="youtube" data-action="play" type="button" disabled>Play</button>
               <button id="youtube-next" class="button" data-player="youtube" data-action="next" type="button" disabled>Next</button>
             </div>
-            <div class="player-volume-label"><label for="youtube-volume">YouTube volume</label><output id="youtube-volume-value">—</output></div>
-            <div class="slider-row"><input id="youtube-volume" type="range" min="0" max="100" step="1" value="0" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
-            <p id="youtube-player-note" class="player-note">Choose RaspPi in YouTube to begin.</p>
-          </div>
-          <form id="youtube-link-form" class="youtube-link-form" aria-label="Play a YouTube link">
-            <label for="youtube-url">YouTube link</label>
-            <input id="youtube-url" type="url" placeholder="https://youtu.be/…" maxlength="512" required autocomplete="off" spellcheck="false" aria-describedby="youtube-link-note" disabled>
-            <button id="youtube-load" class="button" type="submit" disabled>Play on RaspPi</button>
-            <p id="youtube-link-note" class="player-note">Plays one video from the beginning and replaces what’s playing on YouTube.</p>
-          </form>
-          <button id="youtube-restart" class="button restart" data-service="youtube" type="button" disabled>Restart YouTube</button>
-          <div class="pairing">
-            <button id="youtube-pair" class="button" type="button" aria-describedby="pairing-note" disabled>Link phone</button>
-            <p id="pairing-note">Show a TV code to connect the YouTube app on your phone. This can interrupt YouTube playback.</p>
-            <div id="pairing-result" aria-live="polite" hidden>
-              <p class="eyebrow">YouTube TV code</p>
-              <output id="pairing-code" aria-label="YouTube TV code"></output>
-              <p>On your phone, open YouTube → Cast → Link with TV code, then enter these numbers.</p>
-              <button id="pairing-hide" class="button" type="button">Hide code</button>
-            </div>
+            <div class="level-label"><label for="youtube-volume">Volume</label><output id="youtube-volume-value">—</output></div>
+            <div class="slider-row"><input id="youtube-volume" type="range" min="0" max="100" step="1" value="0" aria-label="YouTube volume" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
+            <p id="youtube-player-note" class="state-note" hidden></p>
           </div>
         </article>
       </div>
-      <p class="section-note">Restarting interrupts playback. Running means the service is active, not that a device is casting.</p>
     </section>
 
+    <section class="youtube-panel" aria-labelledby="youtube-link-title">
+      <h2 id="youtube-link-title">Play a YouTube link</h2>
+      <form id="youtube-link-form" aria-labelledby="youtube-link-title">
+        <label class="sr-only" for="youtube-url">YouTube link</label>
+        <div class="link-input-row"><input id="youtube-url" type="url" placeholder="Paste a YouTube link" maxlength="512" required autocomplete="off" spellcheck="false" aria-describedby="youtube-link-note" disabled><button id="youtube-load" class="button primary-button" type="submit" disabled>Play on RaspPi</button></div>
+        <p id="youtube-link-note" class="hint">Starts from the beginning and replaces the current YouTube video</p>
+      </form>
+      <details class="pairing-disclosure">
+        <summary>Link a phone</summary>
+        <div class="pairing-content">
+          <p id="pairing-note" class="hint">Get a TV code to pair the YouTube app on your phone. Opening the code screen interrupts YouTube playback.</p>
+          <button id="youtube-pair" class="button" type="button" aria-describedby="pairing-note" disabled>Get TV code</button>
+          <div id="pairing-result" aria-live="polite" hidden>
+            <output id="pairing-code" aria-label="YouTube TV code"></output>
+            <p class="hint">On your phone: YouTube → Cast → Link with TV code</p>
+            <button id="pairing-hide" class="button text-button" type="button">Hide code</button>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <details class="service-disclosure">
+      <summary>Service controls</summary>
+      <div class="service-content">
+        <p class="hint">Restart a service if it stops responding. This interrupts its playback.</p>
+        <div class="restart-actions"><button id="spotify-restart" class="button" data-service="spotify" type="button" disabled>Restart Spotify</button><button id="youtube-restart" class="button" data-service="youtube" type="button" disabled>Restart YouTube</button></div>
+      </div>
+    </details>
+
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
-    <footer><span>Audio plays on RaspPi</span><span id="updated">Waiting for an update</span></footer>
+    <footer><span id="updated">Waiting for an update</span></footer>
   </main>
 </body>
 </html>
