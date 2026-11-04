@@ -26,6 +26,7 @@
 }
 
 * { box-sizing: border-box; }
+html { scrollbar-gutter: stable; }
 body { margin: 0; }
 main { max-width: 1088px; margin: auto; padding: 0 32px 24px; }
 h1, h2, h3, p { margin: 0; }
@@ -37,6 +38,8 @@ h2, h3 { font-size: 18px; line-height: 24px; font-weight: 500; }
 .header-divider { width: 1px; height: 20px; background: var(--control-border); }
 .connection, .badge { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 12px; line-height: 20px; color: var(--secondary); }
 .dot, .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.connection { width: 122px; flex-shrink: 0; }
+.player-heading .badge { width: 96px; flex-shrink: 0; }
 .connection.offline .dot, .badge.warning::before { background: var(--warning); }
 .badge.neutral::before { background: var(--muted); }
 .badge.error::before { background: var(--error); }
@@ -47,9 +50,8 @@ h2, h3 { font-size: 18px; line-height: 24px; font-weight: 500; }
 .master-heading { margin-bottom: 12px; }
 .master-actions { gap: 24px; }
 .volume-reading { display: flex; align-items: baseline; gap: 4px; font-variant-numeric: tabular-nums; }
-#volume-value { font-size: 32px; line-height: 40px; font-weight: 500; }
+#volume-value { width: 3ch; text-align: right; font-size: 32px; line-height: 40px; font-weight: 500; }
 .volume-unit { font-size: 16px; color: var(--muted); }
-#audio-status { margin-top: 4px; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 16px; font: inherit; font-size: 13px; line-height: 20px; font-weight: 500; color: var(--text); background: var(--raised); border: 1px solid var(--control-border); border-radius: 6px; cursor: pointer; transition: background 150ms var(--ease), border-color 150ms var(--ease); }
 .button:hover:not(:disabled) { background: var(--hover); border-color: var(--control-hover-border); }
 .button:active:not(:disabled) { background: var(--pressed); }
@@ -70,13 +72,13 @@ h2, h3 { font-size: 18px; line-height: 24px; font-weight: 500; }
 .artwork > svg { width: 24px; height: 24px; }
 .artwork img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--page); }
 .track-info { min-width: 0; }
-.track-box { position: relative; min-width: 0; height: 24px; border-radius: 2px; clip-path: inset(-4px 0); }
+.track-box { overflow: hidden; position: relative; min-width: 0; height: 24px; border-radius: 2px; clip-path: inset(-4px 0); }
 .track-box:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .track { display: block; width: max-content; min-width: 100%; max-width: none; font-size: 15px; line-height: 24px; white-space: nowrap; }
 .track.is-idle { color: var(--muted); font-size: 14px; }
 .full-title { display: none; }
-.track-box.is-overflowing:hover, .track-box.is-overflowing:focus { clip-path: none; }
-.track-box.is-overflowing:hover .track, .track-box.is-overflowing:focus .track { visibility: hidden; }
+.track-box.is-overflowing:hover, .track-box.is-overflowing:focus { clip-path: none; overflow: visible; }
+.track-box.is-overflowing:hover .track, .track-box.is-overflowing:focus .track { visibility: hidden; width: 100%; overflow: hidden; }
 .track-box.is-overflowing:hover .full-title, .track-box.is-overflowing:focus .full-title { display: block; position: absolute; z-index: 3; top: -8px; left: -8px; right: -8px; padding: 8px; border: 1px solid var(--control-border); border-radius: 6px; background: var(--raised); color: var(--text); font-size: 15px; line-height: 24px; overflow-wrap: anywhere; }
 .artist { color: var(--secondary); font-size: 13px; line-height: 20px; height: 20px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .spectrum { height: 24px; display: flex; align-items: stretch; gap: 4px; margin-bottom: 8px; color: var(--green); }
@@ -117,7 +119,9 @@ details[open] > summary::before { transform: rotate(45deg); }
 summary:hover { color: var(--text); }
 .pairing-disclosure { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
 .pairing-content { display: grid; justify-items: start; gap: 12px; padding: 8px 0 0; max-width: 560px; }
-#pairing-code { display: block; margin: 4px 0 8px; font-size: 28px; line-height: 36px; letter-spacing: .04em; font-variant-numeric: tabular-nums; user-select: all; }
+#youtube-pair { width: 160px; }
+#pairing-result[hidden] { display: block !important; visibility: hidden; }
+#pairing-code { height: 36px; display: block; margin: 4px 0 8px; font-size: 28px; line-height: 36px; letter-spacing: .04em; font-variant-numeric: tabular-nums; user-select: all; }
 .text-button { padding-left: 0; background: transparent; border-color: transparent; color: var(--secondary); }
 .service-disclosure { margin-top: 20px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
 .service-content { padding: 4px 0 16px; }
@@ -176,7 +180,7 @@ input:disabled { opacity: .45; cursor: not-allowed; }
   .master-actions { gap: 12px; }
   .master-heading { gap: 12px; }
   .master-heading h2 { font-size: 16px; }
-  #volume-value { font-size: 28px; line-height: 36px; }
+  #volume-value { width: 3ch; text-align: right; font-size: 28px; line-height: 36px; }
   .mute-button { min-width: 48px; padding: 12px; }
   .players-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .now-playing { grid-template-columns: 72px minmax(0, 1fr); height: 72px; gap: 12px; }

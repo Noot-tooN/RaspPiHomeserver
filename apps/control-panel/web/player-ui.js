@@ -40,7 +40,7 @@ function titleMotion(id) {
 }
 function renderMedia(id, player, available) {
   const name = id === 'spotify' ? 'Spotify' : 'YouTube';
-  const title = !connected ? 'Waiting for connection' : player?.title || (player?.active ? 'Title unavailable' : id === 'spotify' ? 'Choose RaspPi in Spotify' : 'Paste a link or cast from your phone');
+  const title = !player ? 'Waiting for player state…' : player?.title || (player?.active ? 'Title unavailable' : id === 'spotify' ? 'Choose RaspPi in Spotify' : 'Paste a link or cast from your phone');
   const track = $(id + '-track'), box = $(id + '-track-box');
   if (track.textContent !== title) track.textContent = title;
   track.classList.toggle('is-idle', !player?.active);
@@ -48,10 +48,10 @@ function renderMedia(id, player, available) {
   box.setAttribute('aria-label', title);
   $(id + '-full-title').textContent = title;
   const artist = $(id + '-artist');
-  artist.textContent = connected && player?.active ? player.artist || '' : '';
+  artist.textContent = player?.active ? player.artist || '' : '';
   artist.title = artist.textContent;
   const image = $(id + '-artwork');
-  const url = connected && player?.active ? player.artwork_url || '' : '';
+  const url = player?.active ? player.artwork_url || '' : '';
   if (image.dataset.url !== url) {
     image.hidden = true;
     image.dataset.url = url;
@@ -73,12 +73,23 @@ function renderMedia(id, player, available) {
   else old.available = available;
   renderTimeline(id);
 }
+// Freeze the displayed position before disconnecting; retain it until a fresh snapshot.
+function freezeTimelines() {
+  const now = performance.now();
+  for (const entry of timelines.values()) {
+    const player = entry.player;
+    if (entry.available && player?.active && !player.paused && Number.isFinite(player.position_ms) && Number.isFinite(player.duration_ms)) {
+      player.position_ms = Math.min(player.duration_ms, player.position_ms + Math.max(0, now - entry.received));
+    }
+    entry.received = now;
+  }
+}
 function renderTimeline(id) {
   const entry = timelines.get(id), player = entry?.player, slider = $(id + '-seek');
-  const known = entry?.available && player?.active && Number.isFinite(player.duration_ms) && player.duration_ms > 0 && Number.isFinite(player.position_ms) && !player.live;
+  const known = player?.available && player?.active && Number.isFinite(player.duration_ms) && player.duration_ms > 0 && Number.isFinite(player.position_ms) && !player.live;
   const drag = seekDragging.get(id);
-  slider.disabled = !known || !connected || busy || Boolean(drag?.invalid) || !player.capabilities?.includes('seek');
-  const elapsed = !player?.paused && connected ? Math.max(0, performance.now() - (entry?.received || 0)) : 0;
+  slider.disabled = !known || !entry?.available || !connected || busy || Boolean(drag?.invalid) || !player.capabilities?.includes('seek');
+  const elapsed = !player?.paused && connected && entry?.available ? Math.max(0, performance.now() - (entry?.received || 0)) : 0;
   const position = drag ? Number(slider.value) * 1000 : known ? Math.min(player.duration_ms, player.position_ms + elapsed) : null;
   if (!drag) {
     slider.max = known ? String(Math.floor(player.duration_ms / 1000)) : '1';
@@ -87,7 +98,7 @@ function renderTimeline(id) {
   slider.style.setProperty('--position', `${known ? Math.min(100, position / player.duration_ms * 100) : 0}%`);
   slider.setAttribute('aria-valuetext', known ? `${formatTime(position)} of ${formatTime(player.duration_ms)}` : player?.live ? 'Live stream' : 'Unavailable');
   $(id + '-elapsed').textContent = formatTime(position);
-  $(id + '-duration').textContent = player?.live && entry?.available ? 'Live' : known ? formatTime(player.duration_ms) : '—:—';
+  $(id + '-duration').textContent = player?.live ? 'Live' : known ? formatTime(player.duration_ms) : '—:—';
 }
 function initPlayerUI() {
   for (const id of ['spotify', 'youtube']) {
