@@ -35,6 +35,7 @@ func (c *fakeController) State(context.Context) state {
 	c.reads++
 	s := c.state
 	s.Services = append([]serviceState(nil), s.Services...)
+	s.Players = append([]playerState(nil), s.Players...)
 	return s
 }
 func (c *fakeController) Volume(_ context.Context, v int) error {
@@ -243,9 +244,28 @@ func TestLiveUpdatesAndIdleMonitor(t *testing.T) {
 	t.Fatal("no state event received")
 }
 
-func (c *fakeController) Player(_ context.Context, _ playerAction) error {
+func (c *fakeController) Player(_ context.Context, action playerAction) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls++
+	for index := range c.state.Players {
+		p := &c.state.Players[index]
+		if p.ID != action.Player {
+			continue
+		}
+		if action.Volume != nil {
+			value := *action.Volume
+			p.Volume = &value
+		}
+		if action.Action == "play" || action.Action == "pause" {
+			p.Paused = action.Action == "pause"
+			p.Capabilities = []string{"volume"}
+			if p.Paused {
+				p.Capabilities = append(p.Capabilities, "play")
+			} else {
+				p.Capabilities = append(p.Capabilities, "pause")
+			}
+		}
+	}
 	return nil
 }

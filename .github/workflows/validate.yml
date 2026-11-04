@@ -1,8 +1,6 @@
 name: Validate NixOS
 
 on:
-  pull_request:
-    branches: [master]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -21,8 +19,8 @@ concurrency:
 
 jobs:
   resolve:
-    # Bot updates use the explicit dispatch from Weekly updates.
-    if: github.event_name == 'workflow_dispatch' || (github.actor != 'github-actions[bot]' && github.event.pull_request.head.repo.full_name == github.repository)
+    # Privileged validation is dispatched from master, never from PR code.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -51,6 +49,9 @@ jobs:
             await github.rest.repos.createCommitStatus({...context.repo, sha: pr.head.sha, state: 'pending', context: 'NixOS system build', description: 'Building the proposed system configuration', target_url: `${context.serverUrl}/${process.env.GITHUB_REPOSITORY}/actions/runs/${context.runId}`});
   build:
     needs: resolve
+    concurrency:
+      group: rasppi-cache-publisher
+      cancel-in-progress: false
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     permissions:
