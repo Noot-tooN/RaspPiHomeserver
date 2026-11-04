@@ -87,8 +87,8 @@ reverse proxy; client-supplied forwarding headers never grant access.
 The UI uses dark surfaces, system fonts, a restrained green accent, a prominent master
 volume readout and plain service indicators. A polish pass removed generic
 headlines, decorative glyphs and uppercase labels, aligned spacing to a 4px
-scale, and increased small-text contrast. No fonts, assets or scripts load from
-external services.
+scale, and increased small-text contrast. Fonts, scripts, and interface icons are
+local; current media artwork loads from the allowlisted image CDNs described below.
 
 Design pass guided by [Unslop](https://github.com/heydamir/unslop) by
 [Damir Sokolovsky](https://x.com/heydamir), licensed CC BY 4.0.
