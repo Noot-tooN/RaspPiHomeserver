@@ -40,5 +40,6 @@ function controlYouTube(input) {
   return {id: 'youtube', available: true, active, paused: ![1, 3].includes(status),
     volume: Number.isFinite(volume) ? Math.round(Math.max(0, Math.min(100, volume))) : null,
     muted: typeof player.isMuted === 'function' && player.isMuted(),
-    title: active && typeof data.title === 'string' ? data.title.slice(0, 300) : '', capabilities};
+    video_id: active && typeof data.video_id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.video_id) ? data.video_id : '',
+    title: active && typeof data.title === 'string' ? data.title.trim().slice(0, 300) : '', capabilities};
 }

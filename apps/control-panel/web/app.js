@@ -192,7 +192,7 @@ function renderPlayers() {
     const capabilities = available ? player.capabilities || [] : [];
     const can = action => !busy && capabilities.includes(action);
     const track = $(id + '-track');
-    track.textContent = !connected ? 'Waiting for connection' : player?.title || (id === 'spotify' ? 'Choose RaspPi in Spotify to start listening' : 'Paste a link below or cast from your phone');
+    track.textContent = !connected ? 'Waiting for connection' : player?.title || (player?.active ? 'Title unavailable' : id === 'spotify' ? 'Choose RaspPi in Spotify to start listening' : 'Paste a link below or cast from your phone');
     track.hidden = connected && !available;
     track.classList.toggle('is-idle', !player?.active);
     track.title = player?.title || '';

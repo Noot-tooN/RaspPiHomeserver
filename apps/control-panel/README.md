@@ -53,7 +53,12 @@ browser transitions. Capture stops when the last visible viewer disconnects.
 Hidden tabs close their event stream; reduced-motion viewers request
 `?spectrum=0` and do not start analysis. Stale or disconnected meters go flat.
 Spotify metadata supplies the song name and artists; YouTube supplies the
-video title through the existing read-only player helper.
+video title through the existing read-only player helper. When the TV player
+omits its title, the Go server resolves its validated current video ID through
+YouTube's HTTPS oEmbed endpoint, with no cookies or API key. Successful titles
+are cached for six hours (at most 16 IDs); failures retry after one minute.
+Lookups time out after two seconds and never follow redirects. Missing metadata
+shows “Title unavailable” for active playback, rather than the idle prompt.
 
 Tailscale provides the access boundary. The production service binds only to
 loopback. Caddy serves it at `https://rasppi.tail0fa2e4.ts.net/audio/`, preserving
