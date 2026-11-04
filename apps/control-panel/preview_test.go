@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -24,6 +25,9 @@ func TestPreview(t *testing.T) {
 		{ID: "youtube", Available: true, Active: true, Paused: true, Volume: &youtubeVolume, VideoID: "gnLwexnUp2o", PositionMS: &youtubePosition, DurationMS: &youtubeDuration, ArtworkURL: "https://i.ytimg.com/vi/gnLwexnUp2o/hqdefault.jpg", Title: "DARK TRANCE MIX | Andrea Botez @ OAKLAND WAREHOUSE [4K]", Artist: "Andrea Botez", Capabilities: []string{"volume", "mute", "seek", "play", "load"}},
 	}
 	p := newPanel(c, []string{"127.0.0.1:8098", "localhost:8098"})
+	p.eq = &equalizer{file: filepath.Join(t.TempDir(), "equalizer.json"), run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte(`[{"id":1,"info":{"props":{"node.name":"rasppi-eq","media.class":"Audio/Sink"}}}]`), nil
+	}}
 	p.spectra = &spectrumHub{run: func(ctx context.Context, publish func(spectrumFrame)) {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()

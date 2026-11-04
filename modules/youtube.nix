@@ -15,7 +15,7 @@ in
     };
     environment = {
       PULSE_SERVER = "unix:%t/pulse/native";
-      PULSE_SINK = "rasppi-dac";
+      PULSE_SINK = "rasppi-eq";
       PYTHONUNBUFFERED = "1";
     };
     serviceConfig = {

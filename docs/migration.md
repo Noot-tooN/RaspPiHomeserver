@@ -24,7 +24,7 @@ Persistent state is separate from the reproducible system: browser account sessi
 
 - Cold boot reaches SSH over the intended network without a graphical login.
 - `amixer -c Pro` reports the intended mixer settings, especially de-emphasis and 0 dB hardware gain.
-- `pactl get-default-sink` returns `rasppi-dac`; both services wait for it.
+- `pactl get-default-sink` returns `rasppi-eq`; both services wait for it.
 - Spotify discovers `RaspPi`, plays through the DAC, and controls volume correctly.
 - YouTube pairs as `RaspPi` and plays through the DAC. No display is required.
 - Switching sources, reconnecting Wi-Fi, and restarting either receiver do not lose sound routing.

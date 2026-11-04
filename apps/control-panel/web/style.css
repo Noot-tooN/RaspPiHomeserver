@@ -332,3 +332,21 @@ dd { margin: 0; font-size: 13px; color: var(--secondary); }
 #pairing-info-tip { position: absolute; z-index: 4; right: 0; bottom: calc(100% + 8px); width: 220px; padding: 10px 12px; border-radius: 6px; background: var(--raised); color: var(--secondary); font-size: 12px; line-height: 18px; white-space: normal; box-shadow: 0 4px 16px rgb(0 0 0 / .2); }
 @media(max-width:760px) { .action-slot { min-height: 156px; } .youtube-methods { gap: 4px; } .method-option { padding-inline: 10px; } }
 @media(prefers-reduced-motion:reduce) { #pairing-placeholder i { animation: none; opacity: .45; } }
+
+.eq-panel {border-top:1px solid var(--line); margin-top:24px; padding-top:20px;}
+.eq-panel .heading {display:flex;align-items:center;justify-content:space-between} .eq-panel h2 {font-size:18px;}
+.eq-panel select {font:inherit;font-size:14px;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;}
+.eq-panel .chart { display:grid; grid-template-columns:24px repeat(10,minmax(0,1fr)); margin-top:28px; font-variant-numeric:tabular-nums; }
+.eq-panel .axis { height:142px; display:flex; flex-direction:column; justify-content:space-between; color:var(--muted); font-size:10px; padding-block:1px; }
+.eq-panel .band { display:grid; justify-items:center; grid-template-rows:142px 24px 18px; }
+.eq-panel input[type=range] { appearance:none; writing-mode:vertical-lr; direction:rtl; width:100%; height:142px; margin:0; cursor:pointer; background:linear-gradient(var(--line),var(--line)) center/3px calc(100% - 14px) no-repeat,linear-gradient(var(--line),var(--line)) center/100% 1px no-repeat; }
+.eq-panel input[type=range]::-webkit-slider-thumb { appearance:none; width:14px; height:14px; border-radius:100%; background:var(--green); }
+.eq-panel input[type=range]::-moz-range-thumb { width:14px; height:14px; border:0; border-radius:100%; background:var(--green); }
+.eq-panel input:focus-visible, .eq-panel select:focus-visible { outline:2px solid var(--green); outline-offset:1px; border-radius:4px; }
+.eq-panel .freq { font-size:10px; align-self:end; }
+.eq-panel .gain { color:var(--muted); font-size:10px; }
+.eq-panel .help { margin:18px 0 0; }
+
+.eq-panel .freq,.eq-panel .gain {white-space:nowrap;}
+.eq-panel .help {font-size:12px;color:var(--muted);}
+.eq-panel input[type=range] {padding:0; min-width:0;}
