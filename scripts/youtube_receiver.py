@@ -65,13 +65,45 @@ def page_healthy(state):
     return health_failure(state) is None
 
 
-def get_tab():
+def get_tab(target_id=None):
     with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=2) as response:
         tabs = json.load(response)
-    tab = next((tab for tab in tabs if tab.get("type") == "page"), None)
-    if tab is None:
-        raise ValueError("No browser page yet")
-    return tab
+    pages = [tab for tab in tabs if tab.get("type") == "page"
+             and (target_id is None or tab.get("id") == target_id)]
+    if len(pages) != 1:
+        # Pairing and playback helpers must never control an arbitrary restored tab.
+        raise ValueError("Expected exactly one receiver page")
+    return pages[0]
+
+
+def get_browser_url():
+    with urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2) as response:
+        return json.load(response)["webSocketDebuggerUrl"]
+
+
+async def close_other_pages(browser, target_id):
+    targets = (await browser.call("Target.getTargets"))["targetInfos"]
+    if not any(target["targetId"] == target_id for target in targets):
+        raise RuntimeError("Receiver page disappeared")
+    for target in targets:
+        if target.get("type") == "page" and target["targetId"] != target_id:
+            await browser.call("Target.closeTarget", {"targetId": target["targetId"]})
+
+
+async def create_receiver_page(browser):
+    # This profile belongs exclusively to the receiver. Brave can restore old
+    # YouTube tabs; none has our document-start injection attached. Keep profile
+    # storage (including pairing) but replace its pages with one blank target.
+    target_id = (await browser.call("Target.createTarget", {"url": "about:blank"}))["targetId"]
+    await close_other_pages(browser, target_id)
+    return target_id
+
+
+async def initialize_receiver(cdp, name_script):
+    await cdp.call("Page.enable")
+    await cdp.call("Page.addScriptToEvaluateOnNewDocument", {"source": name_script})
+    # This order is essential: attach while blank, inject, THEN navigate.
+    await cdp.call("Page.navigate", {"url": TV_URL})
 
 
 async def supervise(args):
@@ -89,45 +121,46 @@ async def supervise(args):
             if process.returncode is not None:
                 raise RuntimeError("Browser exited during startup")
             try:
-                tab = await asyncio.to_thread(get_tab)
+                browser_url = await asyncio.to_thread(get_browser_url)
                 break
             except (OSError, ValueError):
                 await asyncio.sleep(1)
         else:
             raise RuntimeError("Browser debugging endpoint did not become ready")
 
-        async with websockets.connect(
-            tab["webSocketDebuggerUrl"], max_size=8 * 1024 * 1024, max_queue=256,
-        ) as socket:
-            cdp = CDP(socket)
-            await cdp.call("Page.enable")
-            await cdp.call("Page.addScriptToEvaluateOnNewDocument", {
-                "source": Path(args.name_script).read_text(),
-            })
-            # This order is essential: attach while blank, inject, THEN navigate.
-            await cdp.call("Page.navigate", {"url": TV_URL})
-            failures = 0
-            while True:
-                await asyncio.sleep(30)
-                if process.returncode is not None:
-                    raise RuntimeError("Browser exited")
-                result = await cdp.call("Runtime.evaluate", {
-                    "expression": HEALTH_EXPRESSION, "returnByValue": True,
-                })
-                state = json.loads(result.get("result", {}).get("value", "{}"))
-                reason = health_failure(state)
-                if reason is None:
-                    if failures:
-                        print("YouTube receiver: health check recovered", file=sys.stderr, flush=True)
-                    failures = 0
-                else:
-                    failures += 1
-                    # Fixed categories only: never log page text, media URLs,
-                    # video titles, account details, or pairing codes.
-                    print(f"YouTube receiver: health check {failures}/3: {reason}",
-                          file=sys.stderr, flush=True)
-                if failures >= 3:
-                    raise RuntimeError("YouTube page failed three consecutive health checks")
+        async with websockets.connect(browser_url) as browser_socket:
+            browser = CDP(browser_socket)
+            target_id = await create_receiver_page(browser)
+            tab = await asyncio.to_thread(get_tab, target_id)
+            async with websockets.connect(
+                tab["webSocketDebuggerUrl"], max_size=8 * 1024 * 1024, max_queue=256,
+            ) as socket:
+                cdp = CDP(socket)
+                await initialize_receiver(cdp, Path(args.name_script).read_text())
+                failures = 0
+                while True:
+                    await asyncio.sleep(30)
+                    if process.returncode is not None:
+                        raise RuntimeError("Browser exited")
+                    # Also remove pages restored late or opened by the TV UI.
+                    await close_other_pages(browser, target_id)
+                    result = await cdp.call("Runtime.evaluate", {
+                        "expression": HEALTH_EXPRESSION, "returnByValue": True,
+                    })
+                    state = json.loads(result.get("result", {}).get("value", "{}"))
+                    reason = health_failure(state)
+                    if reason is None:
+                        if failures:
+                            print("YouTube receiver: health check recovered", file=sys.stderr, flush=True)
+                        failures = 0
+                    else:
+                        failures += 1
+                        # Fixed categories only: never log page text, media URLs,
+                        # video titles, account details, or pairing codes.
+                        print(f"YouTube receiver: health check {failures}/3: {reason}",
+                              file=sys.stderr, flush=True)
+                    if failures >= 3:
+                        raise RuntimeError("YouTube page failed three consecutive health checks")
     finally:
         if process.returncode is None:
             process.terminate()
