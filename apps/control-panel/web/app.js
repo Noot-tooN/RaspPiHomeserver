@@ -61,7 +61,7 @@ function render() {
     $('volume').setAttribute('aria-valuetext', ready ? `${audio.volume} percent` : 'Unavailable');
   }
   $('audio-status').hidden = ready;
-  $('mute').textContent = audio?.muted ? 'Unmute' : 'Mute';
+  setIconButton($('mute'), audio?.muted ? 'volume-x' : 'volume-2', audio?.muted ? 'Unmute master output' : 'Mute master output');
   $('mute').setAttribute('aria-pressed', String(Boolean(audio?.muted)));
   $('volume-note').textContent = !connected ? 'Reconnecting to your Pi. Controls will return automatically.' : !audio?.available ? (audio?.error || 'Waiting for audio state…') : audio.volume > 100 ? 'Saved volume is above 100%. This control sets 0–100%.' : '';
   $('volume-note').hidden = !$('volume-note').textContent;
@@ -84,6 +84,7 @@ function render() {
     $(id + '-status').className = `badge ${style}`;
     $(id + '-detail').textContent = detail;
     $(id + '-detail').hidden = !detail;
+    $(id + '-detail').title = detail;
     $(id + '-restart').disabled = !connected || busy || !service || Boolean(service.error) || Date.now() < restartUntil[id];
   }
   renderPlayers();
@@ -191,26 +192,15 @@ function renderPlayers() {
     const available = connected && service?.active === 'active' && !service.error && Date.now() >= restartUntil[id] && player?.available;
     const capabilities = available ? player.capabilities || [] : [];
     const can = action => !busy && capabilities.includes(action);
-    const track = $(id + '-track');
-    track.textContent = !connected ? 'Waiting for connection' : player?.title || (player?.active ? 'Title unavailable' : id === 'spotify' ? 'Choose RaspPi in Spotify to start listening' : 'Paste a link below or cast from your phone');
-    track.hidden = connected && !available;
-    track.classList.toggle('is-idle', !player?.active);
-    track.title = player?.title || '';
-    if (id === 'spotify') {
-      const artist = $('spotify-artist');
-      artist.textContent = available && player.active ? player.artist || '' : '';
-      artist.title = artist.textContent;
-      artist.hidden = !artist.textContent;
-      track.parentElement.classList.toggle('has-artist', !artist.hidden);
-    }
+    renderMedia(id, player, available);
     const playback = $(id + '-playback');
     playback.dataset.action = player?.paused ? 'play' : 'pause';
-    playback.textContent = player?.active && !player.paused ? 'Pause' : 'Play';
+    setIconButton(playback, player?.active && !player.paused ? 'pause' : 'play', `${player?.active && !player.paused ? 'Pause' : 'Play'} ${id === 'spotify' ? 'Spotify' : 'YouTube'}`);
     playback.disabled = !can(playback.dataset.action);
     for (const action of ['previous', 'next']) {
       const button = $(id + '-' + action);
       button.disabled = !can(action);
-      button.title = id === 'youtube' && !capabilities.includes(action) ? 'YouTube has not exposed a queue to skip through' : '';
+      button.title = id === 'youtube' && !capabilities.includes(action) ? 'YouTube has not exposed a queue to skip through' : `${action === 'next' ? 'Next' : 'Previous'} ${id === 'spotify' ? 'track' : 'video'}`;
     }
     const slider = $(id + '-volume');
     slider.disabled = !can('volume');
@@ -221,8 +211,11 @@ function renderPlayers() {
       slider.setAttribute('aria-valuetext', known ? `${player.volume} percent` : 'Unavailable');
       $(id + '-volume-value').textContent = known ? `${player.volume}%` : '—';
     }
-    $(id + '-player-note').textContent = available && player.muted ? 'Muted in YouTube · unmute from the YouTube app' : '';
-    $(id + '-player-note').hidden = !$(id + '-player-note').textContent;
+    if (available && player.muted && !$(id + '-detail').textContent) {
+      $(id + '-detail').textContent = id === 'spotify' && !capabilities.includes('unmute') ? 'Set a volume to unmute' : 'Muted';
+      $(id + '-detail').hidden = false;
+      $(id + '-detail').title = $(id + '-detail').textContent;
+    }
   }
 }
 
@@ -262,7 +255,7 @@ for (const slider of document.querySelectorAll('.slider-row input[type=range]'))
     const fraction = clientX === undefined ? (Number(slider.value) - min) / (max - min)
       : Math.max(0, Math.min(1, (clientX - rect.left - inset) / travel));
     const value = Math.max(min, Math.min(max, min + Math.round(fraction * (max - min) / step) * step));
-    tooltip.textContent = `${value}%`;
+    tooltip.textContent = slider.classList.contains('seek') ? formatTime(value * 1000) : `${value}%`;
     tooltip.style.left = `${inset + (value - min) / (max - min) * travel}px`;
     tooltip.hidden = false;
   };
@@ -301,4 +294,5 @@ function connect() {
 }
 document.addEventListener('visibilitychange', connect);
 reducedMotion.addEventListener('change', connect);
+initPlayerUI();
 connect();

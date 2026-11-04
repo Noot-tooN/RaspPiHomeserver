@@ -97,6 +97,7 @@ func runWithTimeout(ctx context.Context, timeout time.Duration, name string, arg
 }
 
 type systemController struct {
+	spotifyRestore             spotifyVolumeMemory
 	youtubeTitles              youtubeTitleCache
 	pactl, systemctl, sink     string
 	pairingCommand             string

@@ -65,3 +65,30 @@ test('empty TV titles still expose the current validated video ID for metadata l
   const invalid = fixture({getVideoData: () => ({video_id: 'https://example.com', title: ''})});
   assert.equal(invalid.control({action: 'state'}).video_id, '');
 });
+
+test('seek is bounded, uses milliseconds, and refuses stale or live media', () => {
+  const seeks = [];
+  const f = fixture({getVideoData: () => ({video_id: 'abcdefghijk', title: 'Track'}),
+    getDuration: () => 200, getCurrentTime: () => 12.5, seekTo: (...args) => seeks.push(args)});
+  const state = f.control({action: 'state'});
+  assert.equal(state.position_ms, 12500);
+  assert.equal(state.duration_ms, 200000);
+  assert.ok(state.capabilities.includes('seek'));
+  for (const input of [{positionMs: -1}, {positionMs: 200001}, {positionMs: 1.1}, {positionMs: 5000, expectedVideoId: 'other'}]) {
+    assert.throws(() => f.control({action: 'seek', expectedVideoId: 'abcdefghijk', ...input}));
+  }
+  f.control({action: 'seek', positionMs: 25000, expectedVideoId: 'abcdefghijk'});
+  assert.deepEqual(seeks, [[25, true]]);
+  const live = fixture({getVideoData: () => ({video_id: 'abcdefghijk', isLive: true}), getDuration: () => 200, getCurrentTime: () => 10, seekTo: () => assert.fail('live seek')});
+  assert.equal(live.control({action: 'state'}).duration_ms, null);
+  assert.throws(() => live.control({action: 'seek', positionMs: 5000, expectedVideoId: 'abcdefghijk'}));
+});
+test('native mute toggles without changing volume or playback', () => {
+  let muted = false;
+  const f = fixture({isMuted: () => muted, mute: () => {muted=true;}, unMute: () => {muted=false;}});
+  f.control({action: 'mute'});
+  assert.equal(f.control({action: 'state'}).muted, true);
+  f.control({action: 'unmute'});
+  assert.equal(f.control({action: 'state'}).muted, false);
+  assert.deepEqual(f.calls, []);
+});

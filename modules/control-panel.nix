@@ -31,6 +31,8 @@ in
       ProtectSystem = "strict";
       ProtectHome = "read-only";
       UMask = "0077";
+      StateDirectory = "rasppi-control-panel";
+      StateDirectoryMode = "0700";
       MemoryMax = "128M";
       TasksMax = 32;
     };

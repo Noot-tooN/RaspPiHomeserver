@@ -10,7 +10,14 @@ function controlYouTube(input) {
   const volume = typeof player.getVolume === 'function' ? player.getVolume() : undefined;
   const playlist = typeof player.getPlaylist === 'function' ? player.getPlaylist() : [];
   const index = typeof player.getPlaylistIndex === 'function' ? player.getPlaylistIndex() : -1;
+  const duration = typeof player.getDuration === 'function' ? player.getDuration() : NaN;
+  const position = typeof player.getCurrentTime === 'function' ? player.getCurrentTime() : NaN;
+  const live = Boolean(data?.isLive || data?.isWindowedLive);
+  const muted = typeof player.isMuted === 'function' && player.isMuted();
+  const canSeek = active && !live && [1, 2, 3].includes(status) && Number.isFinite(duration) && duration > 0 && duration <= 604800 && Number.isFinite(position) && typeof player.seekTo === 'function';
   const capabilities = [];
+  if (typeof player.mute === 'function' && typeof player.unMute === 'function' && typeof player.isMuted === 'function') capabilities.push(muted ? 'unmute' : 'mute');
+  if (canSeek) capabilities.push('seek');
   if (typeof player.loadVideoById === 'function') capabilities.push('load');
   if (Number.isFinite(volume) && typeof player.setVolume === 'function') capabilities.push('volume');
   if (active) {
@@ -28,6 +35,11 @@ function controlYouTube(input) {
     if (input.action === 'load') {
       if (typeof input.videoId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(input.videoId)) throw new Error('Invalid video ID');
       player.loadVideoById({videoId: input.videoId, startSeconds: 0});
+    } else if (input.action === 'seek') {
+      if (!Number.isInteger(input.positionMs) || input.positionMs < 0 || input.positionMs > Math.round(duration * 1000) || input.expectedVideoId !== data.video_id) throw new Error('Video changed or invalid position');
+      player.seekTo(input.positionMs / 1000, true);
+    } else if (input.action === 'mute' || input.action === 'unmute') {
+      player[input.action === 'mute' ? 'mute' : 'unMute']();
     } else if (input.action === 'volume') {
       if (!Number.isInteger(input.volume) || input.volume < 0 || input.volume > 100) throw new Error('Invalid volume');
       player.setVolume(input.volume);
@@ -39,7 +51,11 @@ function controlYouTube(input) {
   }
   return {id: 'youtube', available: true, active, paused: ![1, 3].includes(status),
     volume: Number.isFinite(volume) ? Math.round(Math.max(0, Math.min(100, volume))) : null,
-    muted: typeof player.isMuted === 'function' && player.isMuted(),
+    muted, live,
+    duration_ms: active && !live && Number.isFinite(duration) && duration > 0 && duration <= 604800 ? Math.round(duration * 1000) : null,
+    position_ms: active && Number.isFinite(position) && position >= 0 ? Math.round(position * 1000) : null,
+    artwork_url: active && /^[A-Za-z0-9_-]{11}$/.test(data.video_id) ? 'https://i.ytimg.com/vi/' + data.video_id + '/hqdefault.jpg' : '',
+    artist: active && typeof data.author === 'string' ? data.author.slice(0, 300) : '',
     video_id: active && typeof data.video_id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(data.video_id) ? data.video_id : '',
     title: active && typeof data.title === 'string' ? data.title.trim().slice(0, 300) : '', capabilities};
 }

@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#161718">
   <title>RaspPi · Sound control</title>
   <link rel="stylesheet" href="style.css">
+  <script src="player-ui.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -19,7 +20,12 @@
     <section class="master-panel" aria-labelledby="volume-title">
       <div class="master-heading">
         <div><h2 id="volume-title">Master volume</h2><span id="audio-status" class="badge neutral" hidden>Checking audio</span></div>
-        <div class="master-actions"><div class="volume-reading"><span id="volume-value">—</span><span class="volume-unit">%</span></div><button id="mute" class="button mute-button" type="button" aria-pressed="false" disabled>Mute</button></div>
+        <div class="master-actions"><div class="volume-reading"><span id="volume-value">—</span><span class="volume-unit">%</span></div><button id="mute" class="button icon-button mute-button" type="button" aria-label="Mute master output" title="Mute master output" aria-pressed="false" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+  <path d="M16 9a5 5 0 0 1 0 6" />
+  <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+</svg>
+</button></div>
       </div>
       <div class="slider-row"><input id="volume" type="range" min="0" max="100" step="1" value="0" aria-label="Master volume" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
       <p id="volume-note" class="state-note" hidden></p>
@@ -30,34 +36,80 @@
       <div class="players-grid">
         <article class="player-card" aria-labelledby="spotify-title">
           <div class="player-heading"><h3 id="spotify-title">Spotify</h3><span id="spotify-status" class="badge neutral">Checking</span></div>
-          <p id="spotify-detail" class="state-note" hidden></p>
           <div class="player-controls" aria-label="Spotify playback">
-            <div class="now-playing"><p id="spotify-track" class="track">Waiting for player state…</p><p id="spotify-artist" class="artist" hidden></p></div>
-            <div id="spotify-spectrum" class="spectrum" aria-hidden="true"></div>
-            <div class="transport">
-              <button id="spotify-previous" class="button" data-player="spotify" data-action="previous" type="button" disabled>Previous</button>
-              <button id="spotify-playback" class="button playback-button" data-player="spotify" data-action="play" type="button" disabled>Play</button>
-              <button id="spotify-next" class="button" data-player="spotify" data-action="next" type="button" disabled>Next</button>
+            <div class="now-playing">
+              <div class="artwork" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="8" cy="18" r="4" />
+  <path d="M12 18V2l7 4" />
+</svg>
+<img id="spotify-artwork" width="84" height="84" alt="" referrerpolicy="no-referrer" decoding="async" hidden></div>
+              <div class="track-info"><div id="spotify-track-box" class="track-box" tabindex="0" aria-label="Current Spotify title"><p id="spotify-track" class="track">Waiting for player state…</p><span id="spotify-full-title" class="full-title" aria-hidden="true"></span></div><p id="spotify-artist" class="artist"></p></div>
             </div>
-            <div class="level-label"><label for="spotify-volume">Volume</label><output id="spotify-volume-value">—</output></div>
-            <div class="slider-row"><input id="spotify-volume" type="range" min="0" max="100" step="1" value="0" aria-label="Spotify volume" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
-            <p id="spotify-player-note" class="state-note" hidden></p>
+            <div id="spotify-spectrum" class="spectrum" aria-hidden="true"></div>
+            <div class="timeline">
+              <div class="slider-row"><input id="spotify-seek" class="seek" type="range" min="0" max="1" step="1" value="0" aria-label="Spotify playback position" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
+              <div class="time-labels"><span id="spotify-elapsed">—:—</span><span id="spotify-duration">—:—</span></div>
+            </div>
+            <div class="transport"><button id="spotify-previous" class="button icon-button " data-player="spotify" data-action="previous" type="button" aria-label="Previous Spotify" title="Previous" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <polygon points="19 20 9 12 19 4 19 20" />
+  <line x1="5" x2="5" y1="19" y2="5" />
+</svg>
+</button>
+<button id="spotify-playback" class="button icon-button playback-button" data-player="spotify" data-action="play" type="button" aria-label="Play Spotify" title="Play" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <polygon points="6 3 20 12 6 21 6 3" />
+</svg>
+</button>
+<button id="spotify-next" class="button icon-button " data-player="spotify" data-action="next" type="button" aria-label="Next Spotify" title="Next" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <polygon points="5 4 15 12 5 20 5 4" />
+  <line x1="19" x2="19" y1="5" y2="19" />
+</svg>
+</button></div>
+            <div class="player-volume"><button id="spotify-mute" class="button icon-button mute-button" data-player="spotify" data-action="mute" type="button" aria-label="Mute Spotify" title="Mute Spotify" aria-pressed="false" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+  <path d="M16 9a5 5 0 0 1 0 6" />
+  <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+</svg>
+</button><div class="slider-row"><input id="spotify-volume" type="range" min="0" max="100" step="1" value="0" aria-label="Spotify volume" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div><output id="spotify-volume-value">—</output></div>
+            <p id="spotify-detail" class="state-note player-note" hidden></p>
           </div>
         </article>
         <article class="player-card" aria-labelledby="youtube-title">
           <div class="player-heading"><h3 id="youtube-title">YouTube</h3><span id="youtube-status" class="badge neutral">Checking</span></div>
-          <p id="youtube-detail" class="state-note" hidden></p>
           <div class="player-controls" aria-label="YouTube playback">
-            <div class="now-playing"><p id="youtube-track" class="track">Waiting for player state…</p></div>
-            <div id="youtube-spectrum" class="spectrum" aria-hidden="true"></div>
-            <div class="transport">
-              <button id="youtube-previous" class="button" data-player="youtube" data-action="previous" type="button" disabled>Previous</button>
-              <button id="youtube-playback" class="button playback-button" data-player="youtube" data-action="play" type="button" disabled>Play</button>
-              <button id="youtube-next" class="button" data-player="youtube" data-action="next" type="button" disabled>Next</button>
+            <div class="now-playing">
+              <div class="artwork" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="8" cy="18" r="4" />
+  <path d="M12 18V2l7 4" />
+</svg>
+<img id="youtube-artwork" width="84" height="84" alt="" referrerpolicy="no-referrer" decoding="async" hidden></div>
+              <div class="track-info"><div id="youtube-track-box" class="track-box" tabindex="0" aria-label="Current YouTube title"><p id="youtube-track" class="track">Waiting for player state…</p><span id="youtube-full-title" class="full-title" aria-hidden="true"></span></div><p id="youtube-artist" class="artist"></p></div>
             </div>
-            <div class="level-label"><label for="youtube-volume">Volume</label><output id="youtube-volume-value">—</output></div>
-            <div class="slider-row"><input id="youtube-volume" type="range" min="0" max="100" step="1" value="0" aria-label="YouTube volume" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
-            <p id="youtube-player-note" class="state-note" hidden></p>
+            <div id="youtube-spectrum" class="spectrum" aria-hidden="true"></div>
+            <div class="timeline">
+              <div class="slider-row"><input id="youtube-seek" class="seek" type="range" min="0" max="1" step="1" value="0" aria-label="YouTube playback position" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
+              <div class="time-labels"><span id="youtube-elapsed">—:—</span><span id="youtube-duration">—:—</span></div>
+            </div>
+            <div class="transport"><button id="youtube-previous" class="button icon-button " data-player="youtube" data-action="previous" type="button" aria-label="Previous YouTube" title="Previous" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <polygon points="19 20 9 12 19 4 19 20" />
+  <line x1="5" x2="5" y1="19" y2="5" />
+</svg>
+</button>
+<button id="youtube-playback" class="button icon-button playback-button" data-player="youtube" data-action="play" type="button" aria-label="Play YouTube" title="Play" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <polygon points="6 3 20 12 6 21 6 3" />
+</svg>
+</button>
+<button id="youtube-next" class="button icon-button " data-player="youtube" data-action="next" type="button" aria-label="Next YouTube" title="Next" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <polygon points="5 4 15 12 5 20 5 4" />
+  <line x1="19" x2="19" y1="5" y2="19" />
+</svg>
+</button></div>
+            <div class="player-volume"><button id="youtube-mute" class="button icon-button mute-button" data-player="youtube" data-action="mute" type="button" aria-label="Mute YouTube" title="Mute YouTube" aria-pressed="false" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+  <path d="M16 9a5 5 0 0 1 0 6" />
+  <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+</svg>
+</button><div class="slider-row"><input id="youtube-volume" type="range" min="0" max="100" step="1" value="0" aria-label="YouTube volume" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div><output id="youtube-volume-value">—</output></div>
+            <p id="youtube-detail" class="state-note player-note" hidden></p>
           </div>
         </article>
       </div>

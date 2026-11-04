@@ -87,8 +87,8 @@ reverse proxy; client-supplied forwarding headers never grant access.
 The UI uses dark surfaces, system fonts, a restrained green accent, a prominent master
 volume readout and plain service indicators. A polish pass removed generic
 headlines, decorative glyphs and uppercase labels, aligned spacing to a 4px
-scale, and increased small-text contrast. No fonts, assets or scripts load from
-external services.
+scale, and increased small-text contrast. Fonts, scripts, and interface icons are
+local; current media artwork loads from the allowlisted image CDNs described below.
 
 Design pass guided by [Unslop](https://github.com/heydamir/unslop) by
 [Damir Sokolovsky](https://x.com/heydamir), licensed CC BY 4.0.
@@ -101,3 +101,30 @@ the existing spacing, copy, typography, layout, imagery-free controls and
 reduced-motion behavior; no additional changes were warranted in those passes.
 
 Player controls use go-librespot's loopback API (3678) and an allowlisted Python/CDP helper for the existing YouTube TV page. These endpoints are never proxied directly. Every action passes the same Host/Origin/JSON checks as master volume. Status reads are concurrent, bounded, and shared by all visible viewers. Idle players do not receive playback commands; YouTube skips require an exposed playlist. Tests use fake players and never play audio on the Pi.
+
+
+## Player cards
+
+The cards reserve artwork, a single-line title and subtitle, spectrum, timeline,
+transport, volume, and one message row. Missing or failed artwork stays in the
+same neutral placeholder. Lucide 0.468.0 SVG icons are embedded; the license is
+in `web/ICONS-LICENSE.txt`. Controls have accessible names, focus states, and
+48 px targets. Overflowing titles scroll after a pause and reveal their full
+text on hover/focus. Reduced-motion and hidden-tab settings stop title motion.
+
+Spotify exposes album artwork, duration, position, and seek through its local
+API. YouTube uses its native player methods and current video thumbnail.
+Only HTTPS artwork from `i.scdn.co/image/` and `i.ytimg.com/vi/` is allowed;
+images load in the browser with no referrer. The timeline interpolates locally
+between shared status snapshots. Seeking is committed on release, carries the
+expected media ID, and is refused if the observed track changed or the position
+is out of range. Live YouTube streams show “Live” with seeking disabled.
+
+YouTube mute uses native mute/unmute. Spotify mute stores its exact nonzero
+native volume, sets zero, and restores that level on unmute. The private
+systemd state directory preserves the restore value across panel restarts.
+An unknown restore level is never guessed: the volume slider remains usable.
+The paste-link form still replaces the current YouTube video.
+
+This player-card refinement follows the existing Unslop direction and credit
+above; see `docs/player-card-design.md` at the repository root for the audit.
