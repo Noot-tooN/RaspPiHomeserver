@@ -62,6 +62,9 @@ in
   # Substitutions otherwise default to 16 parallel downloads/unpacks. Store
   # deduplication adds another pass over every new file on a slow SD card.
   nix.settings = {
+    extra-substituters = [ "https://github.com/Noot-tooN/RaspPiHomeserver/releases/download/nix-cache" ];
+    extra-trusted-public-keys = [ (builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ../keys/cache.pub)) ];
+    narinfo-cache-negative-ttl = 60;
     max-substitution-jobs = 1;
     http-connections = 4;
     cores = 1;

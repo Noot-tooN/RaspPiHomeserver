@@ -14,8 +14,12 @@
   };
 
   nixConfig = {
-    extra-substituters = [ "https://nixos-raspberrypi.cachix.org" ];
+    extra-substituters = [
+      "https://nixos-raspberrypi.cachix.org"
+      "https://github.com/Noot-tooN/RaspPiHomeserver/releases/download/nix-cache"
+    ];
     extra-trusted-public-keys = [
+      (builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ./keys/cache.pub))
       "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
     ];
   };
@@ -88,6 +92,7 @@
         firmware = host.config.boot.loader.raspberry-pi.firmwarePackage.outPath;
         brave = pkgs.brave.outPath;
         librespot = pkgs.librespot.outPath;
+        go-librespot = (import nixpkgs-unstable { inherit system; }).go-librespot.outPath;
         pipewire = pkgs.pipewire.outPath;
         wireplumber = pkgs.wireplumber.outPath;
         xvfb = pkgs.xvfb.outPath;
