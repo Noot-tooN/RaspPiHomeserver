@@ -6,7 +6,9 @@ Both players reserve space for artwork, metadata and the spectrum so those
 elements can change during playback without moving the controls.
 
 Play leads the transport row, followed by Previous/Next, Back/Forward 15 seconds
-and the player volume. The master volume and service restarts live in Settings.
+and the player volume. Settings holds the master volume, the shared ten-band equalizer and service restarts.
+Normal is flat. Bassy, Vocal and Bright adjust several bands at once. Editing a band
+creates a custom curve. The Pi saves the curve and loads it when PipeWire starts.
 The YouTube tab opens with the link field selected. Selecting Link a phone shows
 a recent code or requests a new one, which can interrupt YouTube playback.
 

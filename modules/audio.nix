@@ -10,8 +10,8 @@ let
     text = ''
       for _ in $(seq 1 90); do
         if [ -e /run/rasppi-dac/ready ] &&
-           pactl list short sinks | awk '$2 == "rasppi-dac" { found=1 } END { exit !found }'; then
-          pactl set-default-sink rasppi-dac
+           pactl list short sinks | awk '$2 == "rasppi-dac" { dac=1 } $2 == "rasppi-eq" { eq=1 } END { exit !(dac && eq) }'; then
+          pactl set-default-sink rasppi-eq
           exit 0
         fi
         sleep 1
@@ -22,6 +22,7 @@ let
   };
 in
 {
+  imports = [ ./equalizer.nix ];
   security.rtkit.enable = true;
   services.pulseaudio.enable = false;
   services.pipewire = {
@@ -89,10 +90,12 @@ in
   systemd.user.services.rasppi-audio-ready = {
     description = "Wait for the DAC and select the playback sink";
     requires = [
+      "rasppi-equalizer.service"
       "pipewire-pulse.service"
       "wireplumber.service"
     ];
     after = [
+      "rasppi-equalizer.service"
       "pipewire-pulse.service"
       "wireplumber.service"
     ];

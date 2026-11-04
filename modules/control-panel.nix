@@ -17,6 +17,7 @@ in
       ConditionUser = "pita";
       StartLimitIntervalSec = 0;
     };
+    path = [ pkgs.pipewire ];
     environment.PULSE_SERVER = "unix:%t/pulse/native";
     serviceConfig = {
       # Only Caddy exposes this service, at the exact public HTTPS origin.

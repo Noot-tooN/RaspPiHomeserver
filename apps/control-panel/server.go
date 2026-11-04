@@ -19,6 +19,7 @@ import (
 var web embed.FS
 
 type panel struct {
+	eq          *equalizer
 	spectra     *spectrumHub
 	control     controller
 	origins     map[string]string
@@ -267,13 +268,15 @@ func (p *panel) handler() http.Handler {
 	assets, _ := fs.Sub(web, "web")
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/events", p.events)
+	mux.HandleFunc("GET /api/equalizer", p.equalizerAPI)
+	mux.HandleFunc("POST /api/equalizer", p.equalizerAPI)
 	for _, route := range []string{"/api/player", "/api/volume", "/api/mute", "/api/restart", "/api/youtube/pairing"} {
 		mux.HandleFunc("POST "+route, p.action)
 	}
 	files := http.FileServer(http.FS(assets))
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/", "/app.js", "/player-ui.js", "/tabbed-ui.js", "/style.css", "/ICONS-LICENSE.txt":
+		case "/", "/app.js", "/equalizer.js", "/player-ui.js", "/tabbed-ui.js", "/style.css", "/ICONS-LICENSE.txt":
 			files.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)

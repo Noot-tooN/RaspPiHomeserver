@@ -8,7 +8,7 @@ This is a migration from an audited Raspberry Pi OS installation. Software build
 
 - A matched Pi kernel/firmware bundle from [nixos-raspberrypi](https://github.com/nvmd/nixos-raspberrypi), pinned in `flake.lock`, with its binary cache.
 - The `rpi-dacpro` firmware overlay and the audited DAC mixer state, including de-emphasis.
-- PipeWire and WirePlumber in the persistent `pita` user session. Both receivers use the named `rasppi-dac` sink; WirePlumber restores the last-used software volume and mute state. Its standard 40% fallback applies only when no saved device-route volume exists.
+- PipeWire and WirePlumber in the persistent `pita` user session. Both receivers use the shared ten-band `rasppi-eq` equalizer before the physical `rasppi-dac` output; WirePlumber restores the last-used software volume and mute state. Its standard 40% fallback applies only when no saved device-route volume exists.
 - Librespot with PulseAudio output, normalization enabled, audio/credential caching disabled, and a fixed discovery port.
 - Brave under Xvfb, with the existing TV user agent, a persistent profile, the verified receiver-name hook, and recovery from an empty/crashed page.
 - SSH using the existing public key in `keys/pita.pub`; password login is disabled. `pita` has passwordless sudo for key-based administration. No password is embedded in the image.

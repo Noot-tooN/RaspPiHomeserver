@@ -8,6 +8,7 @@
   <title>RaspPi · Sound control</title>
   <link rel="stylesheet" href="style.css">
   <script src="player-ui.js" defer></script>
+  <script src="equalizer.js" defer></script>
   <script src="app.js" defer></script>
   <script src="tabbed-ui.js" defer></script>
 </head>
@@ -135,7 +136,12 @@
     </section>
       <div class="drawer-caption"><p class="hint">Master volume affects both players</p></div>
 
-          <section class="service-disclosure">
+          <section class="eq-panel" aria-labelledby="eq">
+        <div class="heading"><h2 id="eq">Equalizer</h2><select id="preset" aria-label="Equalizer preset"></select></div>
+<div class="chart" id="bands"><div class="axis" aria-hidden="true"><span>+6</span><span>0</span><span>−6</span></div></div>
+        <p class="help hint" id="eq-note" role="status">Shared by Spotify and YouTube · Gain in dB</p>
+      </section>
+<section class="service-disclosure">
       <h3>Services</h3>
       <div class="service-content">
         <p class="hint">Restart a service if it stops responding. This interrupts its playback.</p>

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -70,6 +71,9 @@ func main() {
 	control := &systemController{pactl: *pactl, systemctl: *systemctl, sink: *sink, pairingCommand: *pairing, youtubeCommand: *youtubeControl, spotifyURL: "http://127.0.0.1:3678", run: runCommand}
 	control.spotifyRestore.load(*stateDir)
 	p := newPanel(control, authorities)
+	if *stateDir != "" {
+		p.eq = &equalizer{file: filepath.Join(*stateDir, "equalizer.json"), run: runCommand}
+	}
 	if *parec != "" {
 		p.spectra = &spectrumHub{run: func(ctx context.Context, publish func(spectrumFrame)) { runSpectrum(ctx, *pactl, *parec, publish) }}
 	}

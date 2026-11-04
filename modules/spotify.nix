@@ -5,7 +5,7 @@ let
     device_type = "speaker";
     audio_backend = "pulseaudio";
     audio_backend_runtime_socket = "/run/user/1000/pulse/native";
-    audio_device = "rasppi-dac";
+    audio_device = "rasppi-eq";
     normalisation_disabled = false;
     zeroconf_port = 24879;
     credentials = {
@@ -36,7 +36,7 @@ in
     };
     environment = {
       PULSE_SERVER = "unix:%t/pulse/native";
-      PULSE_SINK = "rasppi-dac";
+      PULSE_SINK = "rasppi-eq";
       TMPDIR = "/tmp";
     };
     serviceConfig = {
