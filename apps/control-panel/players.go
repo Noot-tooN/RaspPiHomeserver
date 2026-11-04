@@ -18,6 +18,7 @@ import (
 
 type playerState struct {
 	ID           string   `json:"id"`
+	VideoID      string   `json:"video_id,omitempty"`
 	Available    bool     `json:"available"`
 	Active       bool     `json:"active"`
 	Paused       bool     `json:"paused"`
@@ -193,6 +194,9 @@ func (c *systemController) youtube(ctx context.Context) playerState {
 	var result playerState
 	if json.Unmarshal(data, &result) != nil || result.ID != "youtube" || !result.Available {
 		return state
+	}
+	if result.Active && strings.TrimSpace(result.Title) == "" {
+		result.Title = c.youtubeTitles.title(ctx, result.VideoID)
 	}
 	return result
 }

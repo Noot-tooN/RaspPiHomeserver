@@ -54,3 +54,14 @@ test('explicit load starts a validated video even when idle; polling does not', 
   assert.throws(() => unavailable.control({action: 'load', videoId: 'abcdefghijk'}));
   assert.deepEqual(unavailable.calls, []);
 });
+
+
+test('empty TV titles still expose the current validated video ID for metadata lookup', () => {
+  const f = fixture({getVideoData: () => ({video_id: 'gnLwexnUp2o', title: ''})});
+  const state = f.control({action: 'state'});
+  assert.equal(state.video_id, 'gnLwexnUp2o');
+  assert.equal(state.title, '');
+  assert.deepEqual(f.calls, []);
+  const invalid = fixture({getVideoData: () => ({video_id: 'https://example.com', title: ''})});
+  assert.equal(invalid.control({action: 'state'}).video_id, '');
+});
