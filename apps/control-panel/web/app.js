@@ -39,11 +39,18 @@ function notice(message, error = false) {
   noticeTimer = setTimeout(() => { $('notice').hidden = true; }, error ? 10000 : 5000);
 }
 
-function connection(online) {
+function connection(online, label) {
+  if (connected && !online) freezeTimelines();
   connected = online;
   $('connection').className = `connection ${online ? 'online' : 'offline'}`;
-  $('connection-text').textContent = online ? 'Connected' : 'Reconnecting';
-  if (!online) { $('updated').textContent = 'Connection lost · controls paused'; renderSpectrum(); }
+  $('connection-text').textContent = label || (online ? 'Connected' : current ? 'Reconnecting' : 'Connecting');
+  $('connection').title = online ? 'Live updates' : current ? 'Showing last known values. Controls are paused until fresh data arrives.' : 'Waiting for the Pi';
+  if (!online) {
+    dragging = false;
+    playerDragging.clear();
+    seekDragging.clear();
+    renderSpectrum();
+  }
   render();
 }
 
@@ -52,25 +59,23 @@ function render() {
   const ready = connected && Boolean(audio?.available);
   $('volume').disabled = !ready || busy;
   $('mute').disabled = !ready || busy;
-  $('audio-status').textContent = !connected ? 'Offline' : audio?.available ? 'Connected' : 'Unavailable';
-  $('audio-status').className = `badge ${!connected ? 'neutral' : audio?.available ? '' : 'warning'}`;
   if (!dragging) {
     $('volume-value').textContent = audio?.available ? audio.volume : '—';
     $('volume').value = Math.min(100, audio?.volume || 0);
     $('volume').style.setProperty('--position', `${$('volume').value}%`);
     $('volume').setAttribute('aria-valuetext', ready ? `${audio.volume} percent` : 'Unavailable');
   }
-  $('audio-status').hidden = ready;
   setIconButton($('mute'), audio?.muted ? 'volume-x' : 'volume-2', audio?.muted ? 'Unmute master output' : 'Mute master output');
   $('mute').setAttribute('aria-pressed', String(Boolean(audio?.muted)));
-  $('volume-note').textContent = !connected ? 'Reconnecting to your Pi. Controls will return automatically.' : !audio?.available ? (audio?.error || 'Waiting for audio state…') : audio.volume > 100 ? 'Saved volume is above 100%. This control sets 0–100%.' : '';
+  $('volume-note').textContent = audio && !audio.available ? (audio.error || 'Audio unavailable') : audio?.volume > 100 ? 'Saved volume is above 100%. This control sets 0–100%.' : '';
   $('volume-note').hidden = !$('volume-note').textContent;
+  $('volume-note').title = $('volume-note').textContent;
 
   for (const id of ['spotify', 'youtube']) {
     const service = current?.services.find(s => s.id === id);
     const player = current?.players?.find(p => p.id === id);
     let label = 'Unknown', style = 'neutral', detail = '';
-    if (!connected) { label = 'Offline'; }
+    if (!current) { label = 'Checking'; }
     else if (Date.now() < restartUntil[id]) { label = 'Restarting'; style = 'warning'; }
     else if (service && !service.error) {
       if (service.active === 'active') {
@@ -205,14 +210,14 @@ function renderPlayers() {
     const slider = $(id + '-volume');
     slider.disabled = !can('volume');
     if (!playerDragging.has(id)) {
-      const known = available && Number.isInteger(player.volume);
+      const known = player?.available && Number.isInteger(player.volume);
       slider.value = known ? player.volume : 0;
       slider.style.setProperty('--position', `${slider.value}%`);
       slider.setAttribute('aria-valuetext', known ? `${player.volume} percent` : 'Unavailable');
       $(id + '-volume-value').textContent = known ? `${player.volume}%` : '—';
     }
-    if (available && player.muted && !$(id + '-detail').textContent) {
-      $(id + '-detail').textContent = id === 'spotify' && !capabilities.includes('unmute') ? 'Set a volume to unmute' : 'Muted';
+    if (player?.available && player.muted && !$(id + '-detail').textContent) {
+      $(id + '-detail').textContent = id === 'spotify' && !player.capabilities?.includes('unmute') ? 'Set a volume to unmute' : 'Muted';
       $(id + '-detail').hidden = false;
       $(id + '-detail').title = $(id + '-detail').textContent;
     }
@@ -275,22 +280,25 @@ function connect() {
   clearTimeout(staleTimer);
   clearTimeout(spectrumTimer);
   renderSpectrum();
-  if (document.hidden) { events = null; connected = false; render(); return; }
+  if (document.hidden) { events = null; connection(false, 'Updates paused'); return; }
   connection(false);
-  events = new EventSource(reducedMotion.matches ? 'api/events?spectrum=0' : 'api/events');
-  events.addEventListener('spectrum', event => {
+  const source = new EventSource(reducedMotion.matches ? 'api/events?spectrum=0' : 'api/events');
+  events = source;
+  source.addEventListener('spectrum', event => {
+    if (events !== source || document.hidden) return;
     try { renderSpectrum(JSON.parse(event.data)); } catch { renderSpectrum(); }
     clearTimeout(spectrumTimer);
     spectrumTimer = setTimeout(renderSpectrum, 1000);
   });
-  events.onmessage = event => {
+  source.onmessage = event => {
+    if (events !== source || document.hidden) return;
     try { current = JSON.parse(event.data); } catch { connection(false); return; }
     clearTimeout(staleTimer);
     staleTimer = setTimeout(() => connection(false), 16000);
     connection(true);
     $('updated').textContent = `Updated ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
   };
-  events.onerror = () => { dragging = false; playerDragging.clear(); connection(false); };
+  source.onerror = () => { if (events === source && !document.hidden) connection(false); };
 }
 document.addEventListener('visibilitychange', connect);
 reducedMotion.addEventListener('change', connect);
