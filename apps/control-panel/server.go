@@ -157,6 +157,16 @@ func (p *panel) action(w http.ResponseWriter, r *http.Request) {
 	}
 	var err error
 	switch r.URL.Path {
+	case "/api/player":
+		var input playerAction
+		if !decode(w, r, &input) {
+			return
+		}
+		if !input.valid() {
+			fail(w, 400, "Invalid player control")
+			return
+		}
+		err = p.control.Player(r.Context(), input)
 	case "/api/youtube/pairing":
 		var input struct{}
 		if !decode(w, r, &input) {
@@ -235,7 +245,7 @@ func (p *panel) handler() http.Handler {
 	assets, _ := fs.Sub(web, "web")
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/events", p.events)
-	for _, route := range []string{"/api/volume", "/api/mute", "/api/restart", "/api/youtube/pairing"} {
+	for _, route := range []string{"/api/player", "/api/volume", "/api/mute", "/api/restart", "/api/youtube/pairing"} {
 		mux.HandleFunc("POST "+route, p.action)
 	}
 	files := http.FileServer(http.FS(assets))

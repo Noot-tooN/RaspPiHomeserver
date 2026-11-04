@@ -32,11 +32,33 @@
         <article class="app-card" aria-labelledby="spotify-title">
           <div class="app-heading"><div><h3 id="spotify-title">Spotify</h3><p>Spotify Connect</p></div><span id="spotify-status" class="badge neutral">Checking</span></div>
           <p id="spotify-detail" class="app-detail">Waiting for service state…</p>
+          <div class="player-controls" aria-label="Spotify playback">
+            <p id="spotify-track" class="track">Waiting for player state…</p>
+            <div class="transport">
+              <button id="spotify-previous" class="button" data-player="spotify" data-action="previous" type="button" disabled>Previous</button>
+              <button id="spotify-playback" class="button" data-player="spotify" data-action="play" type="button" disabled>Play</button>
+              <button id="spotify-next" class="button" data-player="spotify" data-action="next" type="button" disabled>Next</button>
+            </div>
+            <div class="player-volume-label"><label for="spotify-volume">Spotify volume</label><output id="spotify-volume-value">—</output></div>
+            <input id="spotify-volume" type="range" min="0" max="100" step="1" value="0" aria-valuetext="Unavailable" disabled>
+            <p id="spotify-player-note" class="player-note">Choose RaspPi in Spotify to begin.</p>
+          </div>
           <button id="spotify-restart" class="button restart" data-service="spotify" type="button" disabled>Restart Spotify</button>
         </article>
         <article class="app-card" aria-labelledby="youtube-title">
           <div class="app-heading"><div><h3 id="youtube-title">YouTube</h3><p>YouTube TV receiver</p></div><span id="youtube-status" class="badge neutral">Checking</span></div>
           <p id="youtube-detail" class="app-detail">Waiting for service state…</p>
+          <div class="player-controls" aria-label="YouTube playback">
+            <p id="youtube-track" class="track">Waiting for player state…</p>
+            <div class="transport">
+              <button id="youtube-previous" class="button" data-player="youtube" data-action="previous" type="button" disabled>Previous</button>
+              <button id="youtube-playback" class="button" data-player="youtube" data-action="play" type="button" disabled>Play</button>
+              <button id="youtube-next" class="button" data-player="youtube" data-action="next" type="button" disabled>Next</button>
+            </div>
+            <div class="player-volume-label"><label for="youtube-volume">YouTube volume</label><output id="youtube-volume-value">—</output></div>
+            <input id="youtube-volume" type="range" min="0" max="100" step="1" value="0" aria-valuetext="Unavailable" disabled>
+            <p id="youtube-player-note" class="player-note">Choose RaspPi in YouTube to begin.</p>
+          </div>
           <button id="youtube-restart" class="button restart" data-service="youtube" type="button" disabled>Restart YouTube</button>
           <div class="pairing">
             <button id="youtube-pair" class="button" type="button" aria-describedby="pairing-note" disabled>Link phone</button>

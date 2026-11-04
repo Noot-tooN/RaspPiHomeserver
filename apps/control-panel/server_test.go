@@ -242,3 +242,10 @@ func TestLiveUpdatesAndIdleMonitor(t *testing.T) {
 	}
 	t.Fatal("no state event received")
 }
+
+func (c *fakeController) Player(_ context.Context, _ playerAction) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls++
+	return nil
+}

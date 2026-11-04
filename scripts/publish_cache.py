@@ -37,10 +37,12 @@ def main():
         raise RuntimeError("Unexpected repository")
     output = run("nix", "build", ".#control-panel", "--no-link", "--print-out-paths")
     closure = run("nix-store", "--query", "--requisites", output).splitlines()
-    # A pure-Go static application should not pull a toolchain/runtime closure
-    # into release assets. Fail rather than accidentally publishing gigabytes.
-    if closure != [output]:
-        raise RuntimeError("Control panel unexpectedly acquired runtime references")
+    # Nix's Go runtime also references small timezone/MIME/network databases.
+    # Bound the whole closure, so a future dependency cannot publish gigabytes.
+    sizes = json.loads(run("nix", "path-info", "--json", "--recursive", output))
+    entries = sizes.values() if isinstance(sizes, dict) else sizes
+    if len(closure) > 8 or sum(item["narSize"] for item in entries) > 32 * 1024 * 1024:
+        raise RuntimeError("Application closure exceeds the small-cache budget")
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         secret = root / "signing-key"
@@ -50,18 +52,20 @@ def main():
         cache = root / "cache"
         run("nix", "copy", "--to", f"file://{cache}?secret-key={secret}", output)
         secret.unlink()
+        (cache / "nix-cache-info").write_text("StoreDir: /nix/store\nWantMassQuery: 1\nPriority: 60\n")
         metadata = list(cache.glob("*.narinfo"))
-        if len(metadata) != 1:
-            raise RuntimeError("Expected exactly one application archive")
-        info, archive_name = flatten_narinfo(metadata[0].read_text())
-        metadata[0].write_text(info)
-        archive = cache / "nar" / archive_name
-        archive.rename(cache / archive_name)
-        if (cache / archive_name).stat().st_size > 32 * 1024 * 1024:
-            raise RuntimeError("Application archive exceeds 32 MiB budget")
+        if not metadata:
+            raise RuntimeError("No application metadata exported")
+        archives = []
+        for path in metadata:
+            info, archive_name = flatten_narinfo(path.read_text())
+            path.write_text(info)
+            archive = cache / archive_name
+            (cache / "nar" / archive_name).rename(archive)
+            archives.append(archive)
         release = json.loads(run("gh", "release", "view", TAG, "--repo", REPOSITORY, "--json", "assets"))
         existing = {asset['name'] for asset in release['assets']}
-        for path in (cache / "nix-cache-info", cache / archive_name, metadata[0]):
+        for path in [cache / "nix-cache-info", *archives, *metadata]:
             if path.name not in existing:
                 run("gh", "release", "upload", TAG, str(path), "--repo", REPOSITORY)
         # Validate both the downloaded archive and its signature from the public

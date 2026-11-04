@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let current = null, connected = false, busy = false, dragging = false, events = null, noticeTimer, staleTimer;
+const playerDragging = new Set();
 const restartUntil = {spotify: 0, youtube: 0};
 let pairingBusy = false, pairingTimer, pairingRetryAt = 0;
 
@@ -60,6 +61,7 @@ function render() {
     $(id + '-detail').textContent = detail;
     $(id + '-restart').disabled = !connected || busy || !service || Boolean(service.error) || Date.now() < restartUntil[id];
   }
+  renderPlayers();
   const youtube = current?.services.find(s => s.id === 'youtube');
   $('youtube-pair').disabled = !connected || busy || youtube?.active !== 'active' || Boolean(youtube?.error) || Date.now() < pairingRetryAt;
   $('youtube-pair').textContent = pairingBusy ? 'Getting code…' : 'Link phone';
@@ -142,6 +144,53 @@ for (const button of document.querySelectorAll('[data-service]')) {
   });
 }
 
+function renderPlayers() {
+  for (const id of ['spotify', 'youtube']) {
+    const player = current?.players?.find(p => p.id === id);
+    const available = connected && player?.available;
+    const capabilities = available ? player.capabilities || [] : [];
+    const can = action => !busy && capabilities.includes(action);
+    $(id + '-track').textContent = !connected ? 'Waiting for connection' : !available ? (player?.error || 'Player unavailable') : player.title || (id === 'spotify' ? 'Choose RaspPi in Spotify' : 'Cast a video to RaspPi');
+    const playback = $(id + '-playback');
+    playback.dataset.action = player?.paused ? 'play' : 'pause';
+    playback.textContent = player?.active && !player.paused ? 'Pause' : 'Play';
+    playback.disabled = !can(playback.dataset.action);
+    for (const action of ['previous', 'next']) $(id + '-' + action).disabled = !can(action);
+    const slider = $(id + '-volume');
+    slider.disabled = !can('volume');
+    if (!playerDragging.has(id)) {
+      const known = available && Number.isInteger(player.volume);
+      slider.value = known ? player.volume : 0;
+      slider.style.setProperty('--position', `${slider.value}%`);
+      slider.setAttribute('aria-valuetext', known ? `${player.volume} percent` : 'Unavailable');
+      $(id + '-volume-value').textContent = known ? `${player.volume}%` : '—';
+    }
+    $(id + '-player-note').textContent = !available ? 'Controls return when the player is available.' : player.muted ? 'Muted in YouTube. Unmute from the YouTube app.' : !player.active ? `Choose something in ${id === 'spotify' ? 'Spotify' : 'YouTube'} to enable playback controls.` : id === 'youtube' && !capabilities.includes('next') && !capabilities.includes('previous') ? 'YouTube has not exposed a playlist to skip through.' : 'Player volume is separate from the master volume.';
+  }
+}
+
+for (const button of document.querySelectorAll('[data-player]')) {
+  button.addEventListener('click', () => change('api/player', {player: button.dataset.player, action: button.dataset.action}, 'Playback command sent'));
+}
+for (const id of ['spotify', 'youtube']) {
+  const slider = $(id + '-volume');
+  slider.addEventListener('input', () => {
+    playerDragging.add(id);
+    $(id + '-volume-value').textContent = `${slider.value}%`;
+    slider.style.setProperty('--position', `${slider.value}%`);
+    slider.setAttribute('aria-valuetext', `${slider.value} percent`);
+  });
+  slider.addEventListener('change', async () => {
+    const volume = Number(slider.value);
+    playerDragging.delete(id);
+    if (await change('api/player', {player: id, action: 'volume', volume}, `${id === 'spotify' ? 'Spotify' : 'YouTube'} volume set to ${volume}%`)) {
+      const player = current?.players?.find(p => p.id === id);
+      if (player) player.volume = volume;
+      render();
+    }
+  });
+}
+
 function connect() {
   if (events) events.close();
   clearTimeout(staleTimer);
@@ -155,7 +204,7 @@ function connect() {
     connection(true);
     $('updated').textContent = `Updated ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
   };
-  events.onerror = () => { dragging = false; connection(false); };
+  events.onerror = () => { dragging = false; playerDragging.clear(); connection(false); };
 }
 document.addEventListener('visibilitychange', connect);
 connect();

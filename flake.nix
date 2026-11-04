@@ -78,6 +78,7 @@
               cp -r ${./youtube} youtube
               python -m unittest discover -s tests -v
               node tests/receiver-name.test.cjs
+              node --test tests/player-control.test.cjs
               touch $out
             '';
         control-panel = self.packages.${system}.control-panel;
@@ -91,7 +92,6 @@
         kernel-modules = host.config.boot.kernelPackages.kernel.modules.outPath;
         firmware = host.config.boot.loader.raspberry-pi.firmwarePackage.outPath;
         brave = pkgs.brave.outPath;
-        librespot = pkgs.librespot.outPath;
         go-librespot = (import nixpkgs-unstable { inherit system; }).go-librespot.outPath;
         pipewire = pkgs.pipewire.outPath;
         wireplumber = pkgs.wireplumber.outPath;
