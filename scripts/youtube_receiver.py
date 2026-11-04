@@ -19,7 +19,8 @@ HEALTH_EXPRESSION = """JSON.stringify({
   host: location.hostname,
   ready: document.readyState,
   textLength: document.body?.innerText.trim().length || 0,
-  label: window.environment?.feature_switches?.mdx_device_label
+  mediaReady: [...document.querySelectorAll('video')].some(video =>
+    !!video.currentSrc && video.readyState >= 1 && !video.error)
 })"""
 
 
@@ -47,14 +48,21 @@ class CDP:
                 return message.get("result", {})
 
 
+def health_failure(state):
+    if state.get("host") != "www.youtube.com":
+        return "unexpected-host"
+    if state.get("ready") not in ("interactive", "complete"):
+        return "document-loading"
+    # YouTube hides its text overlay during playback. Loaded media is healthy
+    # even when paused or buffering; visibility and time advancement are not
+    # liveness signals. Branding is also independent of browser health.
+    if state.get("textLength", 0) <= 0 and state.get("mediaReady") is not True:
+        return "empty-page-without-loaded-media"
+    return None
+
+
 def page_healthy(state):
-    # An account chooser is healthy; an empty document or browser error is not.
-    return (
-        state.get("host") == "www.youtube.com"
-        and state.get("ready") in ("interactive", "complete")
-        and state.get("textLength", 0) > 0
-        and state.get("label") == "RaspPi"
-    )
+    return health_failure(state) is None
 
 
 def get_tab():
@@ -107,7 +115,17 @@ async def supervise(args):
                     "expression": HEALTH_EXPRESSION, "returnByValue": True,
                 })
                 state = json.loads(result.get("result", {}).get("value", "{}"))
-                failures = 0 if page_healthy(state) else failures + 1
+                reason = health_failure(state)
+                if reason is None:
+                    if failures:
+                        print("YouTube receiver: health check recovered", file=sys.stderr, flush=True)
+                    failures = 0
+                else:
+                    failures += 1
+                    # Fixed categories only: never log page text, media URLs,
+                    # video titles, account details, or pairing codes.
+                    print(f"YouTube receiver: health check {failures}/3: {reason}",
+                          file=sys.stderr, flush=True)
                 if failures >= 3:
                     raise RuntimeError("YouTube page failed three consecutive health checks")
     finally:
