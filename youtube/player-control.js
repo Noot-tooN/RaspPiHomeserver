@@ -11,6 +11,7 @@ function controlYouTube(input) {
   const playlist = typeof player.getPlaylist === 'function' ? player.getPlaylist() : [];
   const index = typeof player.getPlaylistIndex === 'function' ? player.getPlaylistIndex() : -1;
   const capabilities = [];
+  if (typeof player.loadVideoById === 'function') capabilities.push('load');
   if (Number.isFinite(volume) && typeof player.setVolume === 'function') capabilities.push('volume');
   if (active) {
     if (typeof player.playVideo === 'function' && [0, 2, 5].includes(status)) capabilities.push('play');
@@ -24,7 +25,10 @@ function controlYouTube(input) {
   }
   if (input.action !== 'state') {
     if (!capabilities.includes(input.action)) throw new Error('Control unavailable');
-    if (input.action === 'volume') {
+    if (input.action === 'load') {
+      if (typeof input.videoId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(input.videoId)) throw new Error('Invalid video ID');
+      player.loadVideoById({videoId: input.videoId, startSeconds: 0});
+    } else if (input.action === 'volume') {
       if (!Number.isInteger(input.volume) || input.volume < 0 || input.volume > 100) throw new Error('Invalid volume');
       player.setVolume(input.volume);
     } else {

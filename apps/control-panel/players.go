@@ -9,7 +9,10 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
+	"regexp"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -29,10 +32,18 @@ type playerAction struct {
 	Player string `json:"player"`
 	Action string `json:"action"`
 	Volume *int   `json:"volume,omitempty"`
+	URL    string `json:"url,omitempty"`
 }
 
 func (a playerAction) valid() bool {
 	if a.Player != "spotify" && a.Player != "youtube" {
+		return false
+	}
+	if a.Action == "load" {
+		_, err := youtubeVideoID(a.URL)
+		return a.Player == "youtube" && a.Volume == nil && err == nil
+	}
+	if a.URL != "" {
 		return false
 	}
 	switch a.Action {
@@ -42,6 +53,46 @@ func (a playerAction) valid() bool {
 		return a.Volume == nil
 	}
 	return false
+}
+
+var youtubeIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+
+// Extract only a video ID. Never fetch the submitted URL or pass it to a shell
+// or browser navigation command. Tracking, playlist and timestamp fields are
+// ignored: this action plays one video from its beginning.
+func youtubeVideoID(raw string) (string, error) {
+	invalid := errors.New("Paste a YouTube video link, such as youtube.com/watch?v=… or youtu.be/…")
+	if len(raw) > 512 {
+		return "", invalid
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Port() != "" {
+		return "", invalid
+	}
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return "", invalid
+	}
+	var id string
+	switch strings.ToLower(u.Host) {
+	case "youtu.be":
+		id = strings.TrimPrefix(u.Path, "/")
+	case "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com":
+		if u.Path == "/watch" && len(query["v"]) == 1 {
+			id = query.Get("v")
+		} else {
+			for _, prefix := range []string{"/shorts/", "/live/", "/embed/"} {
+				if strings.HasPrefix(u.Path, prefix) {
+					id = strings.TrimPrefix(u.Path, prefix)
+					break
+				}
+			}
+		}
+	}
+	if !youtubeIDPattern.MatchString(id) {
+		return "", invalid
+	}
+	return id, nil
 }
 
 var playerHTTP = &http.Client{
@@ -149,6 +200,13 @@ func (c *systemController) Player(ctx context.Context, action playerAction) erro
 			return errors.New("YouTube unavailable")
 		}
 		args := []string{action.Action}
+		if action.Action == "load" {
+			id, err := youtubeVideoID(action.URL)
+			if err != nil {
+				return err
+			}
+			args = append(args, "--video-id="+id)
+		}
 		if action.Volume != nil {
 			args = append(args, fmt.Sprint(*action.Volume))
 		}

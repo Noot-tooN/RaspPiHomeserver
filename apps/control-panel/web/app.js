@@ -63,9 +63,24 @@ function render() {
   }
   renderPlayers();
   const youtube = current?.services.find(s => s.id === 'youtube');
+  const youtubePlayer = current?.players?.find(p => p.id === 'youtube');
+  const canLoad = connected && !busy && youtubePlayer?.available && youtubePlayer.capabilities?.includes('load');
+  $('youtube-url').disabled = !canLoad;
+  $('youtube-load').disabled = !canLoad;
   $('youtube-pair').disabled = !connected || busy || youtube?.active !== 'active' || Boolean(youtube?.error) || Date.now() < pairingRetryAt;
   $('youtube-pair').textContent = pairingBusy ? 'Getting code…' : 'Link phone';
 }
+
+$('youtube-link-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const input = $('youtube-url');
+  const url = input.value.trim();
+  if (input.disabled || !url) return;
+  hidePairing();
+  if (await change('api/player', {player: 'youtube', action: 'load', url}, 'Video sent to RaspPi')) {
+    input.value = '';
+  }
+});
 
 $('youtube-pair').addEventListener('click', async () => {
   if (busy || !connected) return;

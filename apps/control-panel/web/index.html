@@ -59,6 +59,12 @@
             <div class="slider-row"><input id="youtube-volume" type="range" min="0" max="100" step="1" value="0" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
             <p id="youtube-player-note" class="player-note">Choose RaspPi in YouTube to begin.</p>
           </div>
+          <form id="youtube-link-form" class="youtube-link-form" aria-label="Play a YouTube link">
+            <label for="youtube-url">YouTube link</label>
+            <input id="youtube-url" type="url" placeholder="https://youtu.be/…" maxlength="512" required autocomplete="off" spellcheck="false" aria-describedby="youtube-link-note" disabled>
+            <button id="youtube-load" class="button" type="submit" disabled>Play on RaspPi</button>
+            <p id="youtube-link-note" class="player-note">Plays one video from the beginning and replaces what’s playing on YouTube.</p>
+          </form>
           <button id="youtube-restart" class="button restart" data-service="youtube" type="button" disabled>Restart YouTube</button>
           <div class="pairing">
             <button id="youtube-pair" class="button" type="button" aria-describedby="pairing-note" disabled>Link phone</button>
