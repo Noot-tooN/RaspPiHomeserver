@@ -191,6 +191,35 @@ for (const id of ['spotify', 'youtube']) {
   });
 }
 
+// Preview the value under the pointer without changing the slider or audio.
+for (const slider of document.querySelectorAll('.slider-row input[type=range]')) {
+  const tooltip = slider.nextElementSibling;
+  const hide = () => { tooltip.hidden = true; };
+  const show = clientX => {
+    if (slider.disabled) { hide(); return; }
+    const rect = slider.getBoundingClientRect();
+    // Native range values run between the thumb's centers at either end.
+    const inset = parseFloat(getComputedStyle(slider).getPropertyValue('--thumb-size')) / 2;
+    const travel = Math.max(1, rect.width - 2 * inset);
+    const min = Number(slider.min), max = Number(slider.max), step = Number(slider.step);
+    const fraction = clientX === undefined ? (Number(slider.value) - min) / (max - min)
+      : Math.max(0, Math.min(1, (clientX - rect.left - inset) / travel));
+    const value = Math.max(min, Math.min(max, min + Math.round(fraction * (max - min) / step) * step));
+    tooltip.textContent = `${value}%`;
+    tooltip.style.left = `${inset + (value - min) / (max - min) * travel}px`;
+    tooltip.hidden = false;
+  };
+  slider.addEventListener('pointerenter', event => show(event.clientX));
+  slider.addEventListener('pointermove', event => show(event.clientX));
+  slider.addEventListener('pointerleave', hide);
+  slider.addEventListener('pointercancel', hide);
+  slider.addEventListener('pointerup', event => { if (event.pointerType !== 'mouse') hide(); });
+  slider.addEventListener('focus', () => show());
+  slider.addEventListener('input', () => show());
+  slider.addEventListener('blur', hide);
+  slider.addEventListener('keydown', event => { if (event.key === 'Escape') hide(); });
+}
+
 function connect() {
   if (events) events.close();
   clearTimeout(staleTimer);

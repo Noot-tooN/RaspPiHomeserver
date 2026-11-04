@@ -21,7 +21,7 @@
     <section class="volume-card" aria-labelledby="volume-title">
       <div class="card-top"><div><p class="eyebrow">DAC Pro</p><h2 id="volume-title">Master volume</h2></div><span id="audio-status" class="badge neutral">Checking audio</span></div>
       <div class="volume-reading"><span id="volume-value">—</span><span class="volume-unit">%</span><span id="muted-label" hidden>Muted</span></div>
-      <div class="slider-row"><input id="volume" type="range" min="0" max="100" step="1" value="0" aria-label="Master volume" aria-valuetext="Unavailable" disabled></div>
+      <div class="slider-row"><input id="volume" type="range" min="0" max="100" step="1" value="0" aria-label="Master volume" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
       <div class="range-labels"><span>0%</span><span>100%</span></div>
       <div class="volume-bottom"><p id="volume-note">Waiting for audio state…</p><button id="mute" class="button mute-button" type="button" aria-pressed="false" disabled>Mute output</button></div>
     </section>
@@ -40,7 +40,7 @@
               <button id="spotify-next" class="button" data-player="spotify" data-action="next" type="button" disabled>Next</button>
             </div>
             <div class="player-volume-label"><label for="spotify-volume">Spotify volume</label><output id="spotify-volume-value">—</output></div>
-            <input id="spotify-volume" type="range" min="0" max="100" step="1" value="0" aria-valuetext="Unavailable" disabled>
+            <div class="slider-row"><input id="spotify-volume" type="range" min="0" max="100" step="1" value="0" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
             <p id="spotify-player-note" class="player-note">Choose RaspPi in Spotify to begin.</p>
           </div>
           <button id="spotify-restart" class="button restart" data-service="spotify" type="button" disabled>Restart Spotify</button>
@@ -56,7 +56,7 @@
               <button id="youtube-next" class="button" data-player="youtube" data-action="next" type="button" disabled>Next</button>
             </div>
             <div class="player-volume-label"><label for="youtube-volume">YouTube volume</label><output id="youtube-volume-value">—</output></div>
-            <input id="youtube-volume" type="range" min="0" max="100" step="1" value="0" aria-valuetext="Unavailable" disabled>
+            <div class="slider-row"><input id="youtube-volume" type="range" min="0" max="100" step="1" value="0" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
             <p id="youtube-player-note" class="player-note">Choose RaspPi in YouTube to begin.</p>
           </div>
           <button id="youtube-restart" class="button restart" data-service="youtube" type="button" disabled>Restart YouTube</button>
