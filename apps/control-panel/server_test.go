@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -257,9 +258,22 @@ func (c *fakeController) Player(_ context.Context, action playerAction) error {
 			value := *action.Volume
 			p.Volume = &value
 		}
+		if action.PositionMS != nil {
+			value := *action.PositionMS
+			p.PositionMS = &value
+		}
+		if action.Action == "mute" || action.Action == "unmute" {
+			p.Muted = action.Action == "mute"
+			p.Capabilities = slices.DeleteFunc(p.Capabilities, func(v string) bool { return v == "mute" || v == "unmute" })
+			if p.Muted {
+				p.Capabilities = append(p.Capabilities, "unmute")
+			} else {
+				p.Capabilities = append(p.Capabilities, "mute")
+			}
+		}
 		if action.Action == "play" || action.Action == "pause" {
 			p.Paused = action.Action == "pause"
-			p.Capabilities = []string{"volume"}
+			p.Capabilities = slices.DeleteFunc(p.Capabilities, func(v string) bool { return v == "play" || v == "pause" })
 			if p.Paused {
 				p.Capabilities = append(p.Capabilities, "play")
 			} else {

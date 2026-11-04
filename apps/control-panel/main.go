@@ -45,6 +45,7 @@ func main() {
 	pairing := flag.String("youtube-pairing", "", "Path to the YouTube TV-code helper")
 	youtubeControl := flag.String("youtube-control", "", "YouTube player helper")
 	parec := flag.String("parec", "", "Path to per-stream audio capture tool")
+	stateDir := flag.String("state-dir", os.Getenv("STATE_DIRECTORY"), "Private state directory for volume restoration")
 	flag.Parse()
 	host, port, err := net.SplitHostPort(*listen)
 	if err != nil {
@@ -67,6 +68,7 @@ func main() {
 		}
 	}
 	control := &systemController{pactl: *pactl, systemctl: *systemctl, sink: *sink, pairingCommand: *pairing, youtubeCommand: *youtubeControl, spotifyURL: "http://127.0.0.1:3678", run: runCommand}
+	control.spotifyRestore.load(*stateDir)
 	p := newPanel(control, authorities)
 	if *parec != "" {
 		p.spectra = &spectrumHub{run: func(ctx context.Context, publish func(spectrumFrame)) { runSpectrum(ctx, *pactl, *parec, publish) }}

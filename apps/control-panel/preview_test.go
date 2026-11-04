@@ -16,9 +16,10 @@ func TestPreview(t *testing.T) {
 	}
 	c := fixtureController()
 	spotifyVolume, youtubeVolume := 37, 65
+	spotifyPosition, spotifyDuration, youtubePosition, youtubeDuration := int64(72000), int64(244000), int64(3216000), int64(4359000)
 	c.state.Players = []playerState{
-		{ID: "spotify", Available: true, Active: true, Volume: &spotifyVolume, Title: "Midnight City", Artist: "M83", Capabilities: []string{"volume", "pause", "previous", "next"}},
-		{ID: "youtube", Available: true, Active: true, Paused: true, Volume: &youtubeVolume, Title: "A quiet morning in the mountains · ambient session", Capabilities: []string{"volume", "play", "load"}},
+		{ID: "spotify", Available: true, Active: true, Volume: &spotifyVolume, TrackID: "spotify:track:preview", PositionMS: &spotifyPosition, DurationMS: &spotifyDuration, Title: "Midnight City", Artist: "M83", Capabilities: []string{"volume", "mute", "seek", "pause", "previous", "next"}},
+		{ID: "youtube", Available: true, Active: true, Paused: true, Volume: &youtubeVolume, VideoID: "gnLwexnUp2o", PositionMS: &youtubePosition, DurationMS: &youtubeDuration, ArtworkURL: "https://i.ytimg.com/vi/gnLwexnUp2o/hqdefault.jpg", Title: "DARK TRANCE MIX | Andrea Botez @ OAKLAND WAREHOUSE [4K]", Artist: "Andrea Botez", Capabilities: []string{"volume", "mute", "seek", "play", "load"}},
 	}
 	p := newPanel(c, []string{"127.0.0.1:8098", "localhost:8098"})
 	p.spectra = &spectrumHub{run: func(ctx context.Context, publish func(spectrumFrame)) {
@@ -34,7 +35,14 @@ func TestPreview(t *testing.T) {
 				// Synthetic PCM in memory only. The paused YouTube fixture stays flat.
 				n++
 				bands := audioSpectrum(testPCM(150+float64(n%40)*35, .2, false), left, right)
-				publish(spectrumFrame{"spotify": {Status: "live", Bands: bands}, "youtube": {Status: "idle"}})
+				c.mu.Lock()
+				active := len(c.state.Players) > 0 && c.state.Players[0].Active && !c.state.Players[0].Paused
+				c.mu.Unlock()
+				frame := spectrumFrame{"spotify": {Status: "idle"}, "youtube": {Status: "idle"}}
+				if active {
+					frame["spotify"] = spectrumValue{Status: "live", Bands: bands}
+				}
+				publish(frame)
 			}
 		}
 	}}
@@ -46,6 +54,13 @@ func TestPreview(t *testing.T) {
 		c.mu.Lock()
 		c.state.Audio = audioState{Error: "Waiting for DAC Pro"}
 		c.state.Services[1].Active = "failed"
+		c.mu.Unlock()
+		p.refresh()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /__test/idle", func(w http.ResponseWriter, _ *http.Request) {
+		c.mu.Lock()
+		c.state.Players = []playerState{{ID: "spotify", Available: true}, {ID: "youtube", Available: true, Capabilities: []string{"load"}}}
 		c.mu.Unlock()
 		p.refresh()
 		w.WriteHeader(http.StatusNoContent)

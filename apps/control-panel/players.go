@@ -18,6 +18,11 @@ import (
 
 type playerState struct {
 	ID           string   `json:"id"`
+	ArtworkURL   string   `json:"artwork_url,omitempty"`
+	PositionMS   *int64   `json:"position_ms"`
+	DurationMS   *int64   `json:"duration_ms"`
+	Live         bool     `json:"live"`
+	ObservedAt   int64    `json:"observed_at"`
 	VideoID      string   `json:"video_id,omitempty"`
 	Available    bool     `json:"available"`
 	Active       bool     `json:"active"`
@@ -32,14 +37,25 @@ type playerState struct {
 }
 
 type playerAction struct {
-	Player string `json:"player"`
-	Action string `json:"action"`
-	Volume *int   `json:"volume,omitempty"`
-	URL    string `json:"url,omitempty"`
+	Player     string `json:"player"`
+	Action     string `json:"action"`
+	Volume     *int   `json:"volume,omitempty"`
+	URL        string `json:"url,omitempty"`
+	PositionMS *int64 `json:"position_ms,omitempty"`
+	MediaID    string `json:"media_id,omitempty"`
 }
 
 func (a playerAction) valid() bool {
 	if a.Player != "spotify" && a.Player != "youtube" {
+		return false
+	}
+	if a.Action == "seek" {
+		if a.Player == "youtube" && !youtubeIDPattern.MatchString(a.MediaID) {
+			return false
+		}
+		return a.Volume == nil && a.URL == "" && a.PositionMS != nil && *a.PositionMS >= 0 && *a.PositionMS <= 604800000 && a.MediaID != "" && len(a.MediaID) <= 256
+	}
+	if a.PositionMS != nil || a.MediaID != "" {
 		return false
 	}
 	if a.Action == "load" {
@@ -52,7 +68,7 @@ func (a playerAction) valid() bool {
 	switch a.Action {
 	case "volume":
 		return a.Volume != nil && *a.Volume >= 0 && *a.Volume <= 100
-	case "play", "pause", "previous", "next":
+	case "play", "pause", "previous", "next", "mute", "unmute":
 		return a.Volume == nil
 	}
 	return false
@@ -140,9 +156,12 @@ type spotifyStatus struct {
 	Volume      int  `json:"volume"`
 	VolumeSteps int  `json:"volume_steps"`
 	Track       *struct {
-		Name        string   `json:"name"`
-		ArtistNames []string `json:"artist_names"`
-		URI         string   `json:"uri"`
+		Name          string   `json:"name"`
+		ArtistNames   []string `json:"artist_names"`
+		URI           string   `json:"uri"`
+		AlbumCoverURL string   `json:"album_cover_url"`
+		Position      int64    `json:"position"`
+		Duration      int64    `json:"duration"`
 	} `json:"track"`
 }
 
@@ -165,13 +184,29 @@ func (c *systemController) spotify(ctx context.Context) (playerState, int) {
 	}
 	volume := int(math.Round(float64(result.Volume) * 100 / float64(result.VolumeSteps)))
 	state.Volume = &volume
+	state.Muted = result.Volume == 0
+	c.spotifyRestore.observe(result.Volume, result.VolumeSteps)
 	state.Capabilities = []string{"volume"}
+	if state.Muted {
+		if c.spotifyRestore.available() {
+			state.Capabilities = append(state.Capabilities, "unmute")
+		}
+	} else {
+		state.Capabilities = append(state.Capabilities, "mute")
+	}
 	state.Active = result.Track != nil && !result.Stopped
 	state.Paused = result.Paused
 	if state.Active {
 		state.Title = result.Track.Name
 		state.Artist = strings.Join(result.Track.ArtistNames, ", ")
 		state.TrackID = result.Track.URI
+		state.ArtworkURL = safeArtwork(result.Track.AlbumCoverURL)
+		if result.Track.Duration > 0 && result.Track.Duration <= 604800000 {
+			duration, position := result.Track.Duration, max(int64(0), min(result.Track.Position, result.Track.Duration))
+			state.DurationMS, state.PositionMS = &duration, &position
+			state.ObservedAt = time.Now().UnixMilli()
+			state.Capabilities = append(state.Capabilities, "seek")
+		}
 		state.Capabilities = append(state.Capabilities, "previous", "next")
 		if state.Paused {
 			state.Capabilities = append(state.Capabilities, "play")
@@ -198,7 +233,24 @@ func (c *systemController) youtube(ctx context.Context) playerState {
 	if result.Active && strings.TrimSpace(result.Title) == "" {
 		result.Title = c.youtubeTitles.title(ctx, result.VideoID)
 	}
+	result.ArtworkURL = safeArtwork(result.ArtworkURL)
+	result.ObservedAt = time.Now().UnixMilli()
 	return result
+}
+
+// Only known image CDNs may become browser image sources.
+func safeArtwork(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" || u.RawQuery != "" || u.Fragment != "" {
+		return ""
+	}
+	if u.Host == "i.scdn.co" && strings.HasPrefix(u.Path, "/image/") {
+		return u.String()
+	}
+	if u.Host == "i.ytimg.com" && strings.HasPrefix(u.Path, "/vi/") {
+		return u.String()
+	}
+	return ""
 }
 
 func (c *systemController) Player(ctx context.Context, action playerAction) error {
@@ -216,6 +268,12 @@ func (c *systemController) Player(ctx context.Context, action playerAction) erro
 				return err
 			}
 			args = append(args, "--video-id="+id)
+		}
+		if action.Action == "seek" {
+			if !youtubeIDPattern.MatchString(action.MediaID) {
+				return errors.New("Invalid video ID")
+			}
+			args = append(args, fmt.Sprintf("--position-ms=%d", *action.PositionMS), "--expected-video-id="+action.MediaID)
 		}
 		if action.Volume != nil {
 			args = append(args, fmt.Sprint(*action.Volume))
@@ -236,10 +294,27 @@ func (c *systemController) Player(ctx context.Context, action playerAction) erro
 	if !slices.Contains(state.Capabilities, action.Action) {
 		return errors.New("Spotify control unavailable")
 	}
-	endpoints := map[string]string{"play": "resume", "pause": "pause", "previous": "prev", "next": "next", "volume": "volume"}
-	payload := map[string]int{}
+	if action.Action == "seek" && (action.MediaID != state.TrackID || state.DurationMS == nil || *action.PositionMS > *state.DurationMS) {
+		return errors.New("Track changed or seek out of range")
+	}
+	if action.Action == "mute" {
+		if err := c.spotifyRestore.save(); err != nil {
+			return err
+		}
+	}
+	endpoints := map[string]string{"play": "resume", "pause": "pause", "previous": "prev", "next": "next", "volume": "volume", "mute": "volume", "unmute": "volume", "seek": "seek"}
+	payload := map[string]int64{}
 	if action.Action == "volume" {
-		payload["volume"] = int(math.Round(float64(*action.Volume) * float64(steps) / 100))
+		payload["volume"] = int64(math.Round(float64(*action.Volume) * float64(steps) / 100))
+	}
+	if action.Action == "seek" {
+		payload["position"] = *action.PositionMS
+	}
+	if action.Action == "mute" {
+		payload["volume"] = 0
+	}
+	if action.Action == "unmute" {
+		payload["volume"] = int64(c.spotifyRestore.restore(steps))
 	}
 	_, status, err := c.spotifyRequest(ctx, "POST", "/player/"+endpoints[action.Action], payload)
 	if err == nil && status != http.StatusOK {

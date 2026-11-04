@@ -273,7 +273,7 @@ func (p *panel) handler() http.Handler {
 	files := http.FileServer(http.FS(assets))
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/", "/app.js", "/style.css":
+		case "/", "/app.js", "/player-ui.js", "/style.css", "/ICONS-LICENSE.txt":
 			files.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
@@ -284,7 +284,7 @@ func (p *panel) handler() http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' https://i.scdn.co https://i.ytimg.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 		// An exact authority allowlist also prevents DNS-rebinding attacks on
 		// a service whose authentication is provided by the Tailscale network.
 		scheme, allowed := p.origins[strings.ToLower(r.Host)]
