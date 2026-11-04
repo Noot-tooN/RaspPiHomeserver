@@ -273,7 +273,7 @@ func (p *panel) handler() http.Handler {
 	files := http.FileServer(http.FS(assets))
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/", "/app.js", "/player-ui.js", "/style.css", "/ICONS-LICENSE.txt":
+		case "/", "/app.js", "/player-ui.js", "/tabbed-ui.js", "/style.css", "/ICONS-LICENSE.txt":
 			files.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)

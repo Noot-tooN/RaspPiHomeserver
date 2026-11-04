@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
+	"math"
 	"net/http"
 	"os"
 	"testing"
@@ -18,7 +20,7 @@ func TestPreview(t *testing.T) {
 	spotifyVolume, youtubeVolume := 37, 65
 	spotifyPosition, spotifyDuration, youtubePosition, youtubeDuration := int64(72000), int64(244000), int64(3216000), int64(4359000)
 	c.state.Players = []playerState{
-		{ID: "spotify", Available: true, Active: true, Volume: &spotifyVolume, TrackID: "spotify:track:preview", PositionMS: &spotifyPosition, DurationMS: &spotifyDuration, Title: "Midnight City", Artist: "M83", Capabilities: []string{"volume", "mute", "seek", "pause", "previous", "next"}},
+		{ID: "spotify", Available: true, Active: true, Volume: &spotifyVolume, TrackID: "spotify:track:preview", PositionMS: &spotifyPosition, DurationMS: &spotifyDuration, Title: "I Wish You Were Here", Artist: "Alpha Blondy", ArtworkURL: "https://i.scdn.co/image/ab67616d00001e0291f3bb8309fc2ef2066cabfe", Capabilities: []string{"volume", "mute", "seek", "pause", "previous", "next"}},
 		{ID: "youtube", Available: true, Active: true, Paused: true, Volume: &youtubeVolume, VideoID: "gnLwexnUp2o", PositionMS: &youtubePosition, DurationMS: &youtubeDuration, ArtworkURL: "https://i.ytimg.com/vi/gnLwexnUp2o/hqdefault.jpg", Title: "DARK TRANCE MIX | Andrea Botez @ OAKLAND WAREHOUSE [4K]", Artist: "Andrea Botez", Capabilities: []string{"volume", "mute", "seek", "play", "load"}},
 	}
 	p := newPanel(c, []string{"127.0.0.1:8098", "localhost:8098"})
@@ -27,20 +29,33 @@ func TestPreview(t *testing.T) {
 		defer ticker.Stop()
 		left, right := make([]complex128, spectrumSamples), make([]complex128, spectrumSamples)
 		n := 0
+		last := time.Now()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				// Synthetic PCM in memory only. The paused YouTube fixture stays flat.
+			case now := <-ticker.C:
+				elapsed := now.Sub(last).Milliseconds()
+				last = now
+				// Synthetic PCM in memory only; neither fake player produces audio.
 				n++
-				bands := audioSpectrum(testPCM(150+float64(n%40)*35, .2, false), left, right)
+				bands := audioSpectrum(previewPCM(n), left, right)
 				c.mu.Lock()
-				active := len(c.state.Players) > 0 && c.state.Players[0].Active && !c.state.Players[0].Paused
+				active := make(map[string]bool)
+				for i := range c.state.Players {
+					player := &c.state.Players[i]
+					active[player.ID] = player.Active && !player.Paused && !player.Muted
+					if player.Active && !player.Paused && player.PositionMS != nil && player.DurationMS != nil {
+						position := min(*player.DurationMS, *player.PositionMS+elapsed)
+						player.PositionMS = &position
+					}
+				}
 				c.mu.Unlock()
 				frame := spectrumFrame{"spotify": {Status: "idle"}, "youtube": {Status: "idle"}}
-				if active {
-					frame["spotify"] = spectrumValue{Status: "live", Bands: bands}
+				for id, playing := range active {
+					if playing {
+						frame[id] = spectrumValue{Status: "live", Bands: bands}
+					}
 				}
 				publish(frame)
 			}
@@ -67,4 +82,25 @@ func TestPreview(t *testing.T) {
 	})
 	mux.Handle("/", p.handler())
 	t.Fatal(http.ListenAndServe("127.0.0.1:8098", mux))
+}
+
+// Synthetic demo only: a rhythmic bass pulse with moving mid/high harmonics.
+func previewPCM(frame int) []byte {
+	raw := make([]byte, spectrumSamples*8)
+	t := float64(frame) / 10
+	for sample := 0; sample < spectrumSamples; sample++ {
+		at := float64(sample) / spectrumRate
+		value := 0.0
+		for band := 0; band < spectrumBands; band++ {
+			frequency := 40 * math.Pow(300, (float64(band)+0.5)/spectrumBands)
+			pulse := math.Pow((1+math.Cos(t*math.Pi*4-float64(band)*.35))/2, 3)
+			envelope := .2 + .8*math.Pow((1+math.Sin(t*(1.1+float64(band%5)*.17)+float64(band)*1.7))/2, 2)
+			amplitude := (.003 + .014*envelope + .009*pulse) / (1 + float64(band)*.07)
+			value += amplitude * math.Sin(2*math.Pi*frequency*at+float64(band))
+		}
+		bits := math.Float32bits(float32(value))
+		binary.LittleEndian.PutUint32(raw[sample*8:], bits)
+		binary.LittleEndian.PutUint32(raw[sample*8+4:], bits)
+	}
+	return raw
 }

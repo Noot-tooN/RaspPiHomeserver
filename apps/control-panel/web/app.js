@@ -6,32 +6,55 @@ const restartUntil = {spotify: 0, youtube: 0};
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let spectrumTimer;
 const spectrumBars = Object.fromEntries(['spotify', 'youtube'].map(id => {
-  const bars = Array.from({length: 24}, () => document.createElement('span'));
-  $(id + '-spectrum').append(...bars);
+  const bars = Array.from({length: 24}, () => {
+    const column = document.createElement('span'); column.className = 'spectrum-column';
+    const fill = document.createElement('span'); fill.className = 'spectrum-fill';
+    const peak = document.createElement('span'); peak.className = 'spectrum-peak';
+    column.append(fill, peak);
+    return {column, fill, peak, level: 0, heldPeak: 0, holdUntil: 0};
+  });
+  $(id + '-spectrum').append(...bars.map(bar => bar.column));
   return [id, bars];
 }));
-
+let lastSpectrumAt = performance.now();
 function renderSpectrum(frame = {}) {
+  const now = performance.now(), seconds = Math.max(0, Math.min(1, (now - lastSpectrumAt) / 1000));
+  lastSpectrumAt = now;
   for (const id of ['spotify', 'youtube']) {
     const value = frame[id];
-    const live = !reducedMotion.matches && value?.status === 'live' && value.bands?.length === 24;
+    const live = !document.hidden && !reducedMotion.matches && value?.status === 'live' && value.bands?.length === 24;
     $(id + '-spectrum').classList.toggle('is-live', live);
     spectrumBars[id].forEach((bar, index) => {
-      const level = live && Number.isFinite(value.bands[index]) ? value.bands[index] : 0;
-      bar.style.transform = `scaleY(${Math.max(.045, Math.min(1, level / 100))})`;
+      const target = live && Number.isFinite(value.bands[index]) ? Math.max(0, Math.min(1, value.bands[index] / 100)) : 0;
+      // Fast attack, slower release. Peaks hold briefly before falling away.
+      bar.level = live ? Math.max(target, bar.level - seconds * 1.2) : 0;
+      if (!live) { bar.heldPeak = 0; bar.holdUntil = 0; }
+      else if (bar.level >= bar.heldPeak) { bar.heldPeak = bar.level; bar.holdUntil = now + 450; }
+      else if (now > bar.holdUntil) bar.heldPeak = Math.max(bar.level, bar.heldPeak - seconds * .55);
+      bar.fill.style.transitionDuration = target >= bar.level ? '70ms' : '180ms';
+      bar.fill.style.transform = `scaleY(${bar.level})`;
+      bar.peak.style.bottom = `${bar.heldPeak * 100}%`;
     });
   }
 }
 
-let pairingBusy = false, pairingTimer, pairingRetryAt = 0;
+let pairingBusy = false, pairingTimer, pairingRetryAt = 0, pairingEpoch = 0, pairingCode = '', pairingExpiresAt = 0, pairingError = '';
 
 function hidePairing() {
+  pairingEpoch++;
   clearTimeout(pairingTimer);
-  $('pairing-code').textContent = '';
-  $('pairing-result').hidden = true;
+  pairingCode = ''; pairingExpiresAt = 0; pairingError = '';
+  renderPairing();
 }
 
 function notice(message, error = false) {
+  if (typeof actionKind !== 'undefined' && actionKind === 'link' && !$('youtube-panel').hidden) {
+    const feedback = $('youtube-action-feedback');
+    feedback.textContent = message;
+    feedback.className = `action-feedback${error ? ' error' : ''}`;
+    feedback.hidden = false;
+    return;
+  }
   clearTimeout(noticeTimer);
   $('notice').textContent = message;
   $('notice').className = error ? 'notice error' : 'notice';
@@ -54,11 +77,17 @@ function connection(online, label) {
   render();
 }
 
+// Pending requests keep their normal appearance; genuinely unavailable controls dim.
+function setControlDisabled(control, unavailable) {
+  control.disabled = Boolean(unavailable || busy);
+  control.dataset.pending = String(Boolean(busy && !unavailable));
+}
+
 function render() {
   const audio = current?.audio;
   const ready = connected && Boolean(audio?.available);
-  $('volume').disabled = !ready || busy;
-  $('mute').disabled = !ready || busy;
+  setControlDisabled($('volume'), !ready);
+  setControlDisabled($('mute'), !ready);
   if (!dragging) {
     $('volume-value').textContent = audio?.available ? audio.volume : '—';
     $('volume').value = Math.min(100, audio?.volume || 0);
@@ -82,24 +111,25 @@ function render() {
         if (player?.available) { label = player.active ? (player.paused ? 'Paused' : 'Playing') : 'Ready'; style = player.active && !player.paused ? '' : 'neutral'; }
         else { label = 'Unavailable'; style = 'warning'; detail = player?.error || 'Waiting for the player'; }
       } else if (['activating', 'deactivating', 'reloading'].includes(service.active)) { label = 'Starting'; style = 'warning'; }
-      else if (service.active === 'failed') { label = 'Failed'; style = 'error'; detail = 'Open Service controls below to restart'; }
-      else { label = 'Stopped'; detail = 'Open Service controls below to restart'; }
+      else if (service.active === 'failed') { label = 'Failed'; style = 'error'; detail = 'Open Settings to restart the service'; }
+      else { label = 'Stopped'; detail = 'Open Settings to restart the service'; }
     } else { detail = service?.error || 'Service status unavailable'; }
     $(id + '-status').textContent = label;
     $(id + '-status').className = `badge ${style}`;
+    $(id + '-status').style.visibility = ['Playing', 'Paused', 'Ready', 'Checking'].includes(label) ? 'hidden' : 'visible';
     $(id + '-detail').textContent = detail;
     $(id + '-detail').hidden = !detail;
     $(id + '-detail').title = detail;
-    $(id + '-restart').disabled = !connected || busy || !service || Boolean(service.error) || Date.now() < restartUntil[id];
+    setControlDisabled($(id + '-restart'), !connected || !service || Boolean(service.error) || Date.now() < restartUntil[id]);
   }
   renderPlayers();
   const youtube = current?.services.find(s => s.id === 'youtube');
   const youtubePlayer = current?.players?.find(p => p.id === 'youtube');
-  const canLoad = connected && !busy && youtube?.active === 'active' && !youtube.error && Date.now() >= restartUntil.youtube && youtubePlayer?.available && youtubePlayer.capabilities?.includes('load');
-  $('youtube-url').disabled = !canLoad;
-  $('youtube-load').disabled = !canLoad;
-  $('youtube-pair').disabled = !connected || busy || youtube?.active !== 'active' || Boolean(youtube?.error) || Date.now() < pairingRetryAt;
-  $('youtube-pair').textContent = pairingBusy ? 'Getting code…' : 'Get TV code';
+  const canLoad = connected && youtube?.active === 'active' && !youtube.error && Date.now() >= restartUntil.youtube && youtubePlayer?.available && youtubePlayer.capabilities?.includes('load');
+  setControlDisabled($('youtube-url'), !canLoad);
+  setControlDisabled($('youtube-load'), !canLoad);
+  renderPairing();
+  if (typeof renderShell === 'function') renderShell();
 }
 
 $('youtube-link-form').addEventListener('submit', async event => {
@@ -113,9 +143,25 @@ $('youtube-link-form').addEventListener('submit', async event => {
   }
 });
 
-$('youtube-pair').addEventListener('click', async () => {
-  if (busy || !connected) return;
+function renderPairing() {
+  const valid = Boolean(pairingCode) && Date.now() < pairingExpiresAt;
+  const service = current?.services.find(s => s.id === 'youtube');
+  const ready = connected && service?.active === 'active' && !service.error && Date.now() >= restartUntil.youtube;
+  $('pairing-code').textContent = valid ? pairingCode.match(/.{3}/g).join(' ') : '';
+  $('pairing-code').hidden = !valid;
+  $('pairing-placeholder').hidden = !pairingBusy;
+  $('pairing-result').setAttribute('aria-busy', String(pairingBusy));
+  $('youtube-pair').hidden = valid || pairingBusy;
+  setControlDisabled($('youtube-pair'), !ready || Date.now() < pairingRetryAt);
+  $('pairing-status').textContent = valid ? 'YouTube on your phone → Cast → Link with TV code' : pairingBusy ? 'Getting your TV code…' : !ready ? 'YouTube must be connected and running to get a code.' : pairingError || 'Code expired. Retry to get a new code.';
+  $('pairing-status').className = pairingError && !valid && !pairingBusy ? 'hint error' : 'hint';
+}
+async function requestPairing() {
+  if (pairingCode && Date.now() < pairingExpiresAt) { renderPairing(); return; }
+  const service = current?.services.find(s => s.id === 'youtube');
+  if (pairingBusy || busy || !connected || service?.active !== 'active' || service.error || Date.now() < pairingRetryAt || Date.now() < restartUntil.youtube) { renderPairing(); return; }
   hidePairing();
+  const epoch = pairingEpoch;
   pairingBusy = true; busy = true; render();
   pairingRetryAt = Date.now() + 15000;
   try {
@@ -126,18 +172,20 @@ $('youtube-pair').addEventListener('click', async () => {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not get a TV code');
     if (!/^[0-9]{12}$/.test(result.code)) throw new Error('YouTube returned an unreadable TV code. Try again.');
-    $('pairing-code').textContent = result.code.match(/.{3}/g).join(' ');
-    $('pairing-result').hidden = false;
-    // Keep codes out of storage and hide them after five minutes or a restart.
+    if (epoch !== pairingEpoch) return;
+    // Memory only: reopening the field can reuse a recent code without interrupting playback.
+    pairingCode = result.code;
+    pairingExpiresAt = Date.now() + 5 * 60 * 1000;
     pairingTimer = setTimeout(hidePairing, 5 * 60 * 1000);
   } catch (error) {
-    notice(error.name === 'TimeoutError' ? 'YouTube took too long to show a code. Wait a moment and try again.' : error.message || 'Connection lost. Try again.', true);
+    if (epoch !== pairingEpoch) return;
+    pairingError = error.name === 'TimeoutError' ? 'YouTube took too long. Wait a moment and retry.' : error.message || 'Connection lost. Try again.';
   } finally {
     pairingBusy = false; busy = false; render();
     setTimeout(render, Math.max(0, pairingRetryAt - Date.now()) + 50);
   }
-});
-$('pairing-hide').addEventListener('click', hidePairing);
+}
+$('youtube-pair').addEventListener('click', requestPairing);
 
 async function change(path, payload, message) {
   if (busy || !connected) return false;
@@ -149,7 +197,7 @@ async function change(path, payload, message) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not apply the change');
-    notice(message);
+    if (message) notice(message);
     return true;
   } catch (error) {
     notice(error.name === 'TimeoutError' ? 'Request timed out. Check the current state before trying again.' : error.message || 'Connection lost. Try again.', true);
@@ -173,7 +221,7 @@ $('volume').addEventListener('change', async () => {
 });
 $('mute').addEventListener('click', async () => {
   const muted = !current?.audio.muted;
-  if (await change('api/mute', {muted}, muted ? 'Output muted' : 'Output unmuted')) {
+  if (await change('api/mute', {muted})) {
     if (current?.audio) current.audio.muted = muted;
     render();
   }
@@ -196,19 +244,19 @@ function renderPlayers() {
     const service = current?.services.find(s => s.id === id);
     const available = connected && service?.active === 'active' && !service.error && Date.now() >= restartUntil[id] && player?.available;
     const capabilities = available ? player.capabilities || [] : [];
-    const can = action => !busy && capabilities.includes(action);
+    const can = action => capabilities.includes(action);
     renderMedia(id, player, available);
     const playback = $(id + '-playback');
     playback.dataset.action = player?.paused ? 'play' : 'pause';
     setIconButton(playback, player?.active && !player.paused ? 'pause' : 'play', `${player?.active && !player.paused ? 'Pause' : 'Play'} ${id === 'spotify' ? 'Spotify' : 'YouTube'}`);
-    playback.disabled = !can(playback.dataset.action);
+    setControlDisabled(playback, !can(playback.dataset.action));
     for (const action of ['previous', 'next']) {
       const button = $(id + '-' + action);
-      button.disabled = !can(action);
+      setControlDisabled(button, !can(action));
       button.title = id === 'youtube' && !capabilities.includes(action) ? 'YouTube has not exposed a queue to skip through' : `${action === 'next' ? 'Next' : 'Previous'} ${id === 'spotify' ? 'track' : 'video'}`;
     }
     const slider = $(id + '-volume');
-    slider.disabled = !can('volume');
+    setControlDisabled(slider, !can('volume'));
     if (!playerDragging.has(id)) {
       const known = player?.available && Number.isInteger(player.volume);
       slider.value = known ? player.volume : 0;
@@ -216,16 +264,12 @@ function renderPlayers() {
       slider.setAttribute('aria-valuetext', known ? `${player.volume} percent` : 'Unavailable');
       $(id + '-volume-value').textContent = known ? `${player.volume}%` : '—';
     }
-    if (player?.available && player.muted && !$(id + '-detail').textContent) {
-      $(id + '-detail').textContent = id === 'spotify' && !player.capabilities?.includes('unmute') ? 'Set a volume to unmute' : 'Muted';
-      $(id + '-detail').hidden = false;
-      $(id + '-detail').title = $(id + '-detail').textContent;
-    }
+
   }
 }
 
 for (const button of document.querySelectorAll('[data-player]')) {
-  button.addEventListener('click', () => change('api/player', {player: button.dataset.player, action: button.dataset.action}, 'Playback command sent'));
+  button.addEventListener('click', () => change('api/player', {player: button.dataset.player, action: button.dataset.action}, ['mute', 'unmute'].includes(button.dataset.action) ? null : 'Playback command sent'));
 }
 for (const id of ['spotify', 'youtube']) {
   const slider = $(id + '-volume');
@@ -296,7 +340,6 @@ function connect() {
     clearTimeout(staleTimer);
     staleTimer = setTimeout(() => connection(false), 16000);
     connection(true);
-    $('updated').textContent = `Updated ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
   };
   source.onerror = () => { if (events === source && !document.hidden) connection(false); };
 }
