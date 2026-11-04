@@ -20,7 +20,7 @@ function titleMotion(id) {
   const box = $(id + '-track-box'), track = $(id + '-track');
   const distance = Math.max(0, track.scrollWidth - box.clientWidth);
   const previous = titleAnimations.get(id);
-  const animate = distance > 4 && box.dataset.active === 'true' && !document.hidden && !reducedMotion.matches;
+  const animate = box.getClientRects().length > 0 && distance > 4 && box.dataset.active === 'true' && !document.hidden && !reducedMotion.matches;
   box.classList.toggle('is-overflowing', distance > 4);
   if (previous?.distance === distance && previous.text === track.textContent && previous.enabled === animate) return;
   previous?.animation?.cancel();
@@ -61,7 +61,7 @@ function renderMedia(id, player, available) {
   const muted = Boolean(player?.muted);
   const mute = $(id + '-mute');
   mute.dataset.action = muted ? 'unmute' : 'mute';
-  mute.disabled = !available || busy || !player.capabilities?.includes(mute.dataset.action);
+  setControlDisabled(mute, !available || !player.capabilities?.includes(mute.dataset.action));
   mute.setAttribute('aria-pressed', String(muted));
   setIconButton(mute, muted ? 'volume-x' : 'volume-2', `${muted ? 'Unmute' : 'Mute'} ${name}`);
   if (muted && mute.disabled && available && !busy) mute.title = 'Set a volume to unmute';
@@ -88,7 +88,7 @@ function renderTimeline(id) {
   const entry = timelines.get(id), player = entry?.player, slider = $(id + '-seek');
   const known = player?.available && player?.active && Number.isFinite(player.duration_ms) && player.duration_ms > 0 && Number.isFinite(player.position_ms) && !player.live;
   const drag = seekDragging.get(id);
-  slider.disabled = !known || !entry?.available || !connected || busy || Boolean(drag?.invalid) || !player.capabilities?.includes('seek');
+  setControlDisabled(slider, !known || !entry?.available || !connected || Boolean(drag?.invalid) || !player.capabilities?.includes('seek'));
   const elapsed = !player?.paused && connected && entry?.available ? Math.max(0, performance.now() - (entry?.received || 0)) : 0;
   const position = drag ? Number(slider.value) * 1000 : known ? Math.min(player.duration_ms, player.position_ms + elapsed) : null;
   if (!drag) {
@@ -99,6 +99,23 @@ function renderTimeline(id) {
   slider.setAttribute('aria-valuetext', known ? `${formatTime(position)} of ${formatTime(player.duration_ms)}` : player?.live ? 'Live stream' : 'Unavailable');
   $(id + '-elapsed').textContent = formatTime(position);
   $(id + '-duration').textContent = player?.live ? 'Live' : known ? formatTime(player.duration_ms) : '—:—';
+}
+// Use the current media identity and interpolated position, never a stale slider value.
+function relativeSeekTarget(id, seconds, ignorePending = false) {
+  const entry = timelines.get(id), player = entry?.player;
+  if (!connected || (busy && !ignorePending) || seekDragging.has(id) || !entry?.available || !player?.available || !player.active || player.live || !player.capabilities?.includes('seek') || !mediaID(player) || !Number.isFinite(player.position_ms) || !Number.isFinite(player.duration_ms) || player.duration_ms <= 0 || !Number.isFinite(seconds)) return null;
+  const elapsed = player.paused ? 0 : Math.max(0, performance.now() - entry.received);
+  const position = Math.min(player.duration_ms, player.position_ms + elapsed);
+  return {player: id, action: 'seek', position_ms: Math.round(Math.max(0, Math.min(player.duration_ms, position + seconds * 1000))), media_id: mediaID(player)};
+}
+async function skipPlayer(id, seconds) {
+  const target = relativeSeekTarget(id, seconds);
+  if (!target) return;
+  if (await change('api/player', target, `Position set to ${formatTime(target.position_ms)}`)) {
+    const entry = timelines.get(id);
+    if (mediaID(entry?.player) === target.media_id) { entry.player.position_ms = target.position_ms; entry.received = performance.now(); }
+  }
+  renderTimeline(id);
 }
 function initPlayerUI() {
   for (const id of ['spotify', 'youtube']) {

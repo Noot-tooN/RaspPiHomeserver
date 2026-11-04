@@ -140,14 +140,17 @@ and anyone allowed to reach the dashboard can control volume and restart the
 two services. The backend validates the exact public HTTPS origin; arbitrary
 Host, Origin, and forwarding headers do not bypass those checks.
 
-- Set the DAC's master volume from 0–100% and mute/unmute it. WirePlumber saves
+- Choose the Spotify or YouTube tab to see its artwork and control playback.
+  Press **H** for keyboard shortcuts, including Space for play/pause and arrow
+  keys for skipping 15 seconds.
+- In **Settings**, set the DAC's master volume from 0–100% and mute/unmute it. WirePlumber saves
   these settings as usual; opening the page does not change them.
 - See Spotify and YouTube service status, with live updates every five seconds.
   A running process does not prove that casting or playback is healthy.
 - Adjust Spotify and YouTube's own volumes independently of the master DAC.
   Play/pause and previous/next operate on the current session; opening the panel
   never starts playback. Spotify controls require an active Connect session.
-  Paste a YouTube video link into the YouTube card and choose **Play on RaspPi**
+  Paste a YouTube video link under **Open link** on the YouTube tab and choose **Play**
   to start it from your laptop without phone pairing. Regular watch links,
   `youtu.be`, Shorts, and live-video links are supported. This replaces the
   current YouTube video and starts from the beginning; playlist and timestamp
@@ -155,14 +158,14 @@ Host, Origin, and forwarding headers do not bypass those checks.
   YouTube previous/next require a playlist exposed by the TV player; unsupported
   controls stay disabled. A volume change does not unmute YouTube if it was muted
   in the YouTube app.
-- Restart either service. This interrupts that app's playback; the panel reports
+- Restart either service from **Settings**. This interrupts that app's playback; the panel reports
   that a restart was requested, then shows the actual service state.
-- Use **Link phone** on the YouTube card to display its current TV code. On your
+- Select **Link a phone** on the YouTube tab to display its current TV code. On your
   phone, open YouTube → Cast → Link with TV code and enter the numbers. Opening
   pairing settings can interrupt YouTube playback. A fresh receiver is opened
   in guest mode; no Google account sign-in is required. Codes appear only on
   request and are hidden after five minutes, on refresh, or when restarting
-  YouTube from the panel. **Hide code** clears the display without unlinking devices.
+  YouTube from the panel. Choose **Open link** to return to the link field.
 
 The panel runs as `pita`, without sudo. It remains available when an audio or
 receiver service fails, and retries startup until Tailscale has an address.
