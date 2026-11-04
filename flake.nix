@@ -19,7 +19,7 @@
       "https://github.com/Noot-tooN/RaspPiHomeserver/releases/download/nix-cache"
     ];
     extra-trusted-public-keys = [
-      (builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ./keys/cache.pub))
+      "rasppi-control-panel-1:t1ZQNd3ciDcQ6o9BKCiLX7c/SaIG0Bv+Kab3LHL5+vA="
       "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
     ];
   };

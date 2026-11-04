@@ -29,7 +29,9 @@ jobs:
       - name: Evaluate configuration and test applications
         run: nix flake check --print-build-logs
       - name: Test cache and update safeguards
-        run: python3 -m unittest discover -s tests -p 'test_automation*.py' -v
+        run: |
+          python3 -m unittest discover -s tests -p 'test_automation*.py' -v
+          node --test tests/test_auto_merge.cjs
       - name: Build the system
         run: nix build .#system --out-link result-system --print-build-logs
       - name: Publish and verify the signed application cache

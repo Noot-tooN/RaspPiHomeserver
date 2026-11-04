@@ -1,0 +1,140 @@
+name: Validate NixOS
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request to build
+        required: true
+        type: string
+      auto_merge:
+        description: Merge an eligible weekly bot update after validation
+        default: false
+        type: boolean
+
+permissions: {}
+concurrency:
+  group: validate-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    # Bot updates use the explicit dispatch from Weekly updates.
+    if: github.event_name == 'workflow_dispatch' || (github.actor != 'github-actions[bot]' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    outputs:
+      sha: ${{ steps.pr.outputs.sha }}
+      base: ${{ steps.pr.outputs.base }}
+      number: ${{ steps.pr.outputs.number }}
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: pr
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        with:
+          script: |
+            const number = Number(process.env.PR_NUMBER);
+            if (!Number.isSafeInteger(number) || number < 1) throw new Error('Invalid PR number');
+            const {data: pr} = await github.rest.pulls.get({...context.repo, pull_number: number});
+            if (pr.state !== 'open' || pr.base.ref !== 'master' || pr.head.repo.full_name !== process.env.GITHUB_REPOSITORY) {
+              throw new Error('Only open, same-repository PRs targeting master are supported');
+            }
+            core.setOutput('sha', pr.head.sha);
+            core.setOutput('base', pr.base.sha);
+            core.setOutput('number', number);
+            await github.rest.repos.createCommitStatus({...context.repo, sha: pr.head.sha, state: 'pending', context: 'NixOS system build', description: 'Building the proposed system configuration', target_url: `${context.serverUrl}/${process.env.GITHUB_REPOSITORY}/actions/runs/${context.runId}`});
+  build:
+    needs: resolve
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31
+      - name: Verify expensive ARM64 packages are cached
+        run: python3 scripts/check_cache.py
+      - name: Test cache and update safeguards
+        run: |
+          python3 -m unittest discover -s tests -p 'test_automation*.py' -v
+          node --test tests/test_auto_merge.cjs
+      - name: Evaluate configuration and test applications
+        run: nix --accept-flake-config flake check --print-build-logs
+      - name: Build the entire system
+        run: nix --accept-flake-config build --no-write-lock-file --no-link -L .#system
+      - name: Publish and verify the signed application cache before merging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NIX_CACHE_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+        run: python3 scripts/publish_cache.py
+  publish:
+    if: always() && needs.resolve.result == 'success'
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PR_NUMBER: ${{ needs.resolve.outputs.number }}
+          BUILT_SHA: ${{ needs.resolve.outputs.sha }}
+          BASE_SHA: ${{ needs.resolve.outputs.base }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          AUTO_MERGE: ${{ github.event_name == 'workflow_dispatch' && inputs.auto_merge }}
+        with:
+          script: |
+            const sha = process.env.BUILT_SHA;
+            const success = process.env.BUILD_RESULT === 'success';
+            await github.rest.repos.createCommitStatus({...context.repo, sha, state: success ? 'success' : 'failure', context: 'NixOS system build', description: success ? 'Full NixOS build passed' : 'Build failed or was cancelled', target_url: `${context.serverUrl}/${process.env.GITHUB_REPOSITORY}/actions/runs/${context.runId}`});
+            if (!success || process.env.AUTO_MERGE !== 'true') return;
+            const number = Number(process.env.PR_NUMBER);
+            const {data: pr} = await github.rest.pulls.get({...context.repo, pull_number: number});
+            const {data: master} = await github.rest.repos.getBranch({...context.repo, branch: 'master'});
+            const files = await github.paginate(github.rest.pulls.listFiles, {...context.repo, pull_number: number, per_page: 100});
+            if (pr.state !== 'open' || pr.draft || pr.user.login !== 'github-actions[bot]' ||
+                pr.head.repo.full_name !== process.env.GITHUB_REPOSITORY ||
+                !/^automation\/weekly-\d+-\d+$/.test(pr.head.ref) || pr.base.ref !== 'master' ||
+                pr.head.sha !== sha || master.commit.sha !== process.env.BASE_SHA ||
+                files.length !== 1 || files[0].filename !== 'flake.lock' || files[0].status !== 'modified') {
+              core.notice('Auto-merge withheld: PR scope or revision changed; revalidation required.');
+              return;
+            }
+            // Allow revision updates throughout the graph, preserving sources and wiring.
+            async function lockAt(ref) {
+              const {data} = await github.rest.repos.getContent({...context.repo, path: 'flake.lock', ref});
+              return JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
+            }
+            const before = await lockAt(master.commit.sha);
+            const after = await lockAt(sha);
+            function canonical(value) {
+              if (Array.isArray(value)) return value.map(canonical);
+              if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(k => [k, canonical(value[k])]));
+              return value;
+            }
+            function graph(lock, name = lock.root) {
+              const node = structuredClone(lock.nodes[name]);
+              if (node.locked) {
+                // Preserve source identity and any explicitly requested commit pin.
+                const mutable = node.original?.rev ? ['narHash', 'lastModified'] : ['rev', 'narHash', 'lastModified'];
+                node.locked = Object.fromEntries(Object.entries(node.locked).filter(([key]) => !mutable.includes(key)));
+              }
+              if (node.inputs) node.inputs = Object.fromEntries(Object.entries(node.inputs).map(([key, ref]) => [key, Array.isArray(ref) ? ref : graph(lock, ref)]));
+              return node;
+            }
+            if (before.version !== after.version || JSON.stringify(canonical(graph(before))) !== JSON.stringify(canonical(graph(after)))) {
+              throw new Error('Lock change alters source identities, branches, or dependency wiring; manual review required');
+            }
+            const {data: merged} = await github.rest.pulls.merge({...context.repo, pull_number: number, sha, merge_method: 'squash'});
+            if (!merged.merged) throw new Error(merged.message);
+            core.notice(`Merged verified update PR #${number}`);
