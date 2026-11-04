@@ -43,7 +43,7 @@ in
       StateDirectory = "rasppi-spotify";
       StateDirectoryMode = "0700";
       ExecStartPre = "${pkgs.coreutils}/bin/install -m 600 ${settings} %S/rasppi-spotify/config.yml";
-      ExecStart = "${pkgsUnstable.go-librespot}/bin/go-librespot -config_dir %S/rasppi-spotify";
+      ExecStart = "${pkgsUnstable.go-librespot}/bin/go-librespot --config_dir %S/rasppi-spotify";
       Restart = "always";
       RestartSec = 10;
       UMask = "0077";

@@ -56,6 +56,17 @@
       };
       formatter.${system} = pkgs.nixfmt-tree;
       checks.${system} = {
+        spotify-command = pkgs.runCommand "spotify-command-check" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+          python - <<'PYTHON'
+          import re, shlex, subprocess
+          command = shlex.split(${builtins.toJSON host.config.systemd.user.services.spotify.serviceConfig.ExecStart})
+          help_text = subprocess.check_output([command[0], "--help"], text=True, stderr=subprocess.STDOUT)
+          flags = re.findall(r"(?<!-)--[a-z_]+", help_text)
+          assert command[1] in flags, "Configured Spotify option is not a supported long flag"
+          PYTHON
+          touch $out
+        '';
+
         dashboard = pkgs.runCommand "dashboard-config-check" { nativeBuildInputs = [ pkgs.caddy ]; } ''
           export HOME=$TMPDIR
           # Keep the actual routes/TLS settings; only move access logs into the sandbox.
