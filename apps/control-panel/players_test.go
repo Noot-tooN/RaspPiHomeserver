@@ -37,7 +37,7 @@ func TestSpotifyNativeStateAndVolumeMapping(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/status":
-			fmt.Fprint(w, `{"paused":true,"stopped":false,"volume":10,"volume_steps":20,"track":{"name":"A track"},"username":"private-account"}`)
+			fmt.Fprint(w, `{"paused":true,"stopped":false,"volume":10,"volume_steps":20,"track":{"name":"A track","artist_names":["First artist","Second artist"],"uri":"spotify:track:example"},"username":"private-account"}`)
 		case "/player/volume":
 			if r.Method != "POST" {
 				t.Error("wrong method")
@@ -56,7 +56,7 @@ func TestSpotifyNativeStateAndVolumeMapping(t *testing.T) {
 	defer server.Close()
 	c := &systemController{spotifyURL: server.URL}
 	state, _ := c.spotify(context.Background())
-	if !state.Available || !state.Active || !state.Paused || *state.Volume != 50 || state.Title != "A track" || !slices.Contains(state.Capabilities, "play") {
+	if !state.Available || !state.Active || !state.Paused || *state.Volume != 50 || state.Title != "A track" || state.Artist != "First artist, Second artist" || state.TrackID != "spotify:track:example" || !slices.Contains(state.Capabilities, "play") {
 		t.Fatalf("wrong state: %+v", state)
 	}
 	volume := 25

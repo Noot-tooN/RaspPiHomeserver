@@ -2,7 +2,7 @@
 
 One Go executable embeds the HTML, CSS and JavaScript. It uses the standard
 library only and builds with `CGO_ENABLED=0`. The operating system supplies
-`pactl`, `systemctl`, PipeWire and the receiver services; these are not bundled
+`pactl`, `parec`, `systemctl`, PipeWire and the receiver services; these are not bundled
 inside the executable.
 TV pairing uses a small helper with the same Python/websockets runtime already
 used by the YouTube receiver. It adds no Go dependency or always-running service.
@@ -42,6 +42,18 @@ One server-sent event stream per visible page carries snapshots from a shared
 monitor. Commands have time/output limits, mutations are serialized, and
 restarts have a five-second cooldown. Missing audio or service state is shown
 as unavailable rather than assumed healthy.
+
+Each player card has a real 24-band spectrum. `parec --monitor-stream` taps
+individual application streams without rerouting playback or changing volume.
+A shared analyzer samples stereo at 24 kHz, applies a Hann-windowed FFT and
+sends only band magnitudes through named `spectrum` SSE events at 10 Hz. Raw
+audio stays in memory and is never stored or sent to the browser. Discovery
+runs every two seconds; at most two streams per player are monitored to cover
+browser transitions. Capture stops when the last visible viewer disconnects.
+Hidden tabs close their event stream; reduced-motion viewers request
+`?spectrum=0` and do not start analysis. Stale or disconnected meters go flat.
+Spotify metadata supplies the song name and artists; YouTube supplies the
+video title through the existing read-only player helper.
 
 Tailscale provides the access boundary. The production service binds only to
 loopback. Caddy serves it at `https://rasppi.tail0fa2e4.ts.net/audio/`, preserving

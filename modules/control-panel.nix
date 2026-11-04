@@ -20,7 +20,7 @@ in
     environment.PULSE_SERVER = "unix:%t/pulse/native";
     serviceConfig = {
       # Only Caddy exposes this service, at the exact public HTTPS origin.
-      ExecStart = "${panel}/bin/rasppi-control-panel --listen 127.0.0.1:8090 --public-origin https://rasppi.tail0fa2e4.ts.net --pactl ${pkgs.pulseaudio}/bin/pactl --systemctl ${pkgs.systemd}/bin/systemctl --youtube-pairing ${pairing} --youtube-control ${player}";
+      ExecStart = "${panel}/bin/rasppi-control-panel --listen 127.0.0.1:8090 --public-origin https://rasppi.tail0fa2e4.ts.net --pactl ${pkgs.pulseaudio}/bin/pactl --parec ${pkgs.pulseaudio}/bin/parec --systemctl ${pkgs.systemd}/bin/systemctl --youtube-pairing ${pairing} --youtube-control ${player}";
       Restart = "always";
       RestartSec = 15;
       TimeoutStopSec = 5;
