@@ -1,8 +1,15 @@
-{ buildGoModule }:
+{ buildGoModule, lib }:
 buildGoModule {
   pname = "rasppi-control-panel";
   version = "0.1.0";
-  src = ./.;
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions [
+      (lib.fileset.fileFilter (file: file.hasExt "go") ./.)
+      ./go.mod
+      ./web
+    ];
+  };
   vendorHash = null;
   env.CGO_ENABLED = "0";
   ldflags = [

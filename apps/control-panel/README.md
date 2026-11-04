@@ -82,3 +82,5 @@ near-neutral charcoal ramp, keeps green on the fader and healthy status dots,
 and separates surfaces with borders instead of shadows. The audit retained
 the existing spacing, copy, typography, layout, imagery-free controls and
 reduced-motion behavior; no additional changes were warranted in those passes.
+
+Player controls use go-librespot's loopback API (3678) and an allowlisted Python/CDP helper for the existing YouTube TV page. These endpoints are never proxied directly. Every action passes the same Host/Origin/JSON checks as master volume. Status reads are concurrent, bounded, and shared by all visible viewers. Idle players do not receive playback commands; YouTube skips require an exposed playlist. Tests use fake players and never play audio on the Pi.

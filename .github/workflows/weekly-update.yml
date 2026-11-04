@@ -1,0 +1,58 @@
+name: Weekly updates
+
+on:
+  schedule:
+    # Sunday 02:23 UTC (03:23 CET / 04:23 CEST).
+    - cron: '23 2 * * 0'
+  workflow_dispatch:
+
+permissions: {}
+concurrency:
+  group: weekly-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31
+      - name: Update all flake inputs
+        run: nix flake update
+      - name: Publish update and dispatch validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- flake.lock; then
+            echo 'No dependency changes.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          branch="automation/weekly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add flake.lock
+          git commit -m 'Update all flake inputs'
+          gh auth setup-git
+          git push origin "$branch"
+          cat > /tmp/update-body.md <<'EOF'
+          Weekly update of all flake inputs, including the Raspberry Pi hardware, both nixpkgs pins, Comin, and their locked dependencies.
+
+          An ARM64 system build, upstream binary-cache checks and signed application-cache publication will validate this revision. Auto-merge requires a bot-authored lock-only change, unchanged source identities, branches, and dependency wiring, and matching validated PR and master revisions.
+          EOF
+          pr_url=$(gh pr create --base master --head "$branch" --title 'Weekly flake input updates' --body-file /tmp/update-body.md)
+          pr_number=$(gh pr view "$pr_url" --json number --jq .number)
+          # Explicit dispatch avoids approval/event suppression for GITHUB_TOKEN PRs.
+          gh workflow run validate.yml --ref master -f pr_number="$pr_number" -f auto_merge=true
+          echo "Update PR: $pr_url" >> "$GITHUB_STEP_SUMMARY"

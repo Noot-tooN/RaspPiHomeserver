@@ -1,0 +1,181 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"slices"
+	"time"
+)
+
+type playerState struct {
+	ID           string   `json:"id"`
+	Available    bool     `json:"available"`
+	Active       bool     `json:"active"`
+	Paused       bool     `json:"paused"`
+	Volume       *int     `json:"volume"`
+	Muted        bool     `json:"muted"`
+	Title        string   `json:"title"`
+	Capabilities []string `json:"capabilities"`
+	Error        string   `json:"error,omitempty"`
+}
+
+type playerAction struct {
+	Player string `json:"player"`
+	Action string `json:"action"`
+	Volume *int   `json:"volume,omitempty"`
+}
+
+func (a playerAction) valid() bool {
+	if a.Player != "spotify" && a.Player != "youtube" {
+		return false
+	}
+	switch a.Action {
+	case "volume":
+		return a.Volume != nil && *a.Volume >= 0 && *a.Volume <= 100
+	case "play", "pause", "previous", "next":
+		return a.Volume == nil
+	}
+	return false
+}
+
+var playerHTTP = &http.Client{
+	Timeout:       2 * time.Second,
+	Transport:     &http.Transport{Proxy: nil, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second},
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+func (c *systemController) spotifyRequest(ctx context.Context, method, path string, payload any) ([]byte, int, error) {
+	if c.spotifyURL == "" {
+		return nil, 0, errors.New("Spotify API not configured")
+	}
+	var body []byte
+	if payload != nil {
+		body, _ = json.Marshal(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.spotifyURL+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, err
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	response, err := playerHTTP.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(response.Body, 512*1024+1))
+	if err != nil || len(data) > 512*1024 {
+		return nil, 0, errors.New("Invalid player response")
+	}
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+		return nil, response.StatusCode, errors.New("Player unavailable")
+	}
+	return data, response.StatusCode, nil
+}
+
+type spotifyStatus struct {
+	Paused      bool `json:"paused"`
+	Stopped     bool `json:"stopped"`
+	Volume      int  `json:"volume"`
+	VolumeSteps int  `json:"volume_steps"`
+	Track       *struct {
+		Name string `json:"name"`
+	} `json:"track"`
+}
+
+func (c *systemController) spotify(ctx context.Context) (playerState, int) {
+	state := playerState{ID: "spotify", Capabilities: []string{}}
+	data, status, err := c.spotifyRequest(ctx, "GET", "/status", nil)
+	if err != nil {
+		state.Error = "Spotify player unavailable"
+		return state, 0
+	}
+	state.Available = true
+	if status == http.StatusNoContent {
+		return state, 0
+	}
+	var result spotifyStatus
+	if json.Unmarshal(data, &result) != nil || result.VolumeSteps < 1 || result.VolumeSteps > 65535 || result.Volume < 0 || result.Volume > result.VolumeSteps {
+		state.Available = false
+		state.Error = "Could not read Spotify state"
+		return state, 0
+	}
+	volume := int(math.Round(float64(result.Volume) * 100 / float64(result.VolumeSteps)))
+	state.Volume = &volume
+	state.Capabilities = []string{"volume"}
+	state.Active = result.Track != nil && !result.Stopped
+	state.Paused = result.Paused
+	if state.Active {
+		state.Title = result.Track.Name
+		state.Capabilities = append(state.Capabilities, "previous", "next")
+		if state.Paused {
+			state.Capabilities = append(state.Capabilities, "play")
+		} else {
+			state.Capabilities = append(state.Capabilities, "pause")
+		}
+	}
+	return state, result.VolumeSteps
+}
+
+func (c *systemController) youtube(ctx context.Context) playerState {
+	state := playerState{ID: "youtube", Capabilities: []string{}, Error: "YouTube player unavailable"}
+	if c.youtubeCommand == "" {
+		return state
+	}
+	data, err := runWithTimeout(ctx, 4*time.Second, c.youtubeCommand, "state")
+	if err != nil {
+		return state
+	}
+	var result playerState
+	if json.Unmarshal(data, &result) != nil || result.ID != "youtube" || !result.Available {
+		return state
+	}
+	return result
+}
+
+func (c *systemController) Player(ctx context.Context, action playerAction) error {
+	if !action.valid() {
+		return errors.New("Invalid player control")
+	}
+	if action.Player == "youtube" {
+		if c.youtubeCommand == "" {
+			return errors.New("YouTube unavailable")
+		}
+		args := []string{action.Action}
+		if action.Volume != nil {
+			args = append(args, fmt.Sprint(*action.Volume))
+		}
+		data, err := runWithTimeout(ctx, 4*time.Second, c.youtubeCommand, args...)
+		if err != nil {
+			return err
+		}
+		var result struct {
+			Accepted bool `json:"accepted"`
+		}
+		if json.Unmarshal(data, &result) != nil || !result.Accepted {
+			return errors.New("YouTube control unavailable")
+		}
+		return nil
+	}
+	state, steps := c.spotify(ctx)
+	if !slices.Contains(state.Capabilities, action.Action) {
+		return errors.New("Spotify control unavailable")
+	}
+	endpoints := map[string]string{"play": "resume", "pause": "pause", "previous": "prev", "next": "next", "volume": "volume"}
+	payload := map[string]int{}
+	if action.Action == "volume" {
+		payload["volume"] = int(math.Round(float64(*action.Volume) * float64(steps) / 100))
+	}
+	_, status, err := c.spotifyRequest(ctx, "POST", "/player/"+endpoints[action.Action], payload)
+	if err == nil && status != http.StatusOK {
+		return errors.New("Spotify session ended")
+	}
+	return err
+}

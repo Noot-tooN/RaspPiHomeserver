@@ -4,7 +4,7 @@ Baseline: read-only audit on 2026-11-03 of Raspberry Pi OS on a Pi 4 Model B Rev
 
 | Audited behavior | NixOS treatment |
 |---|---|
-| Raspotify wraps librespot 0.8.0 | Use the stock librespot package directly as a `pita` user service. Preserve PulseAudio backend, normalization, disabled caches and `/tmp` buffering. Keep useful journal logging instead of quiet mode. |
+| Raspotify wraps librespot 0.8.0 | Use cached `go-librespot` as a `pita` user service for native local volume/transport controls. Preserve the PulseAudio DAC route, normalization, discovery port and disabled credential persistence. Keep its API on loopback. |
 | Raspotify runs as `pita`, reaches UID 1000's Pulse socket | Both receivers run in `pita`'s lingering systemd user manager and use PipeWire's Pulse socket. No desktop or autologin is needed. |
 | Browser startup sets the default sink and can race DAC discovery | A shared readiness service waits for the restored DAC and actual sink. WirePlumber gives the platform sound device a fixed node name. |
 | PipeWire at 48 kHz; observed software volume 40% | Pin the clock rate and let WirePlumber restore the last-used software volume and mute state. The observed 40% is not imposed at every startup; WirePlumber's standard 40% fallback is used only without saved route volume. Source volume remains separately adjustable. |

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,6 +32,7 @@ type serviceState struct {
 }
 
 type state struct {
+	Players  []playerState  `json:"players"`
 	Audio    audioState     `json:"audio"`
 	Services []serviceState `json:"services"`
 }
@@ -50,6 +52,7 @@ func serviceUnit(id string) (string, bool) {
 }
 
 type controller interface {
+	Player(context.Context, playerAction) error
 	State(context.Context) state
 	Volume(context.Context, int) error
 	Mute(context.Context, bool) error
@@ -94,9 +97,10 @@ func runWithTimeout(ctx context.Context, timeout time.Duration, name string, arg
 }
 
 type systemController struct {
-	pactl, systemctl, sink string
-	pairingCommand         string
-	run                    commandRunner
+	pactl, systemctl, sink     string
+	pairingCommand             string
+	spotifyURL, youtubeCommand string
+	run                        commandRunner
 }
 
 func (c *systemController) PairYouTube(ctx context.Context) (pairingCode, error) {
@@ -115,8 +119,18 @@ func (c *systemController) PairYouTube(ctx context.Context) (pairingCode, error)
 }
 
 func (c *systemController) State(ctx context.Context) state {
-	// Only two short, read-only commands per refresh, shared by all viewers.
-	return state{Audio: c.audio(ctx), Services: c.serviceStates(ctx)}
+	// Independent, bounded reads run together; one slow receiver cannot delay
+	// the master-volume and service checks by the sum of all timeouts.
+	var result state
+	result.Players = make([]playerState, 2)
+	var wait sync.WaitGroup
+	wait.Add(4)
+	go func() { defer wait.Done(); result.Audio = c.audio(ctx) }()
+	go func() { defer wait.Done(); result.Services = c.serviceStates(ctx) }()
+	go func() { defer wait.Done(); result.Players[0], _ = c.spotify(ctx) }()
+	go func() { defer wait.Done(); result.Players[1] = c.youtube(ctx) }()
+	wait.Wait()
+	return result
 }
 
 func (c *systemController) audio(ctx context.Context) audioState {

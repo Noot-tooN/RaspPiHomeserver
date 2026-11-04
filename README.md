@@ -47,13 +47,15 @@ The GitHub Actions workflow runs on a native ARM64 runner and checks the cache, 
 
 ### Build times and caches
 
-The cache check verifies the exact pinned kernel, kernel modules, firmware, Brave, librespot, PipeWire, WirePlumber, Xvfb and Tailscale outputs against `cache.nixos.org` and the Pi project's Cachix cache. It fails if a target is absent or the caches cannot be reached. It does not certify every transitive dependency.
+The cache check verifies the exact pinned kernel, kernel modules, firmware, Brave, go-librespot, PipeWire, WirePlumber, Xvfb and Tailscale outputs against `cache.nixos.org` and the Pi project's Cachix cache. It fails if a target is absent or the caches cannot be reached. It does not certify every transitive dependency.
 
-The control panel is a small, dependency-free Go source build with embedded web assets; changes to it do not rebuild the browser or audio stack. CI validates it but does not publish a binary cache, so Comin builds changed panel versions on the Pi. Build and test flags are aligned so tests reuse compiled standard-library objects within that build.
+The control panel is a small, dependency-free Go executable with embedded web assets. CI publishes its signed ARM64 output and small runtime data files to the [Nix cache release](https://github.com/Noot-tooN/RaspPiHomeserver/releases/tag/nix-cache). Comin downloads it instead of compiling Go on the Pi. The signing key lives only in the `NIX_CACHE_SIGNING_KEY` Actions secret; the Pi trusts the public key in `keys/cache.pub`. The cache has a 32 MiB uncompressed closure budget and never contains SD images or the Go toolchain. Existing content-addressed outputs are retained for rollbacks.
+
+Only Go sources, `go.mod`, and web assets are app source inputs. Editing documentation or unrelated Nix configuration does not change the app output. Build and test flags share compiled standard-library objects within CI.
 
 Comin is built from its pinned source. It is included in the image, so ordinary configuration changes reuse it; changing its version or dependencies can require another Go build. Generated units, scripts, initrds, and image assembly still run locally. The receiver-name change does not rebuild Brave. We avoid the Pi project's global multimedia overrides, which would cause additional rebuilds.
 
-Update inputs deliberately, then rerun the cache check and CI. A passing build is not a replacement for a boot/audio test after kernel or firmware changes.
+Weekly automation proposes input updates and merges only after the cache checks and full ARM64 build pass. A passing build is not a replacement for a boot/audio test after kernel or firmware changes.
 
 ## First boot
 
@@ -138,6 +140,12 @@ Host, Origin, and forwarding headers do not bypass those checks.
   these settings as usual; opening the page does not change them.
 - See Spotify and YouTube service status, with live updates every five seconds.
   A running process does not prove that casting or playback is healthy.
+- Adjust Spotify and YouTube's own volumes independently of the master DAC.
+  Play/pause and previous/next operate on the current session; opening the panel
+  never starts playback. Spotify controls require an active Connect session.
+  YouTube previous/next require a playlist exposed by the TV player; unsupported
+  controls stay disabled. A volume change does not unmute YouTube if it was muted
+  in the YouTube app.
 - Restart either service. This interrupts that app's playback; the panel reports
   that a restart was requested, then shows the actual service state.
 - Use **Link phone** on the YouTube card to display its current TV code. On your
@@ -184,7 +192,11 @@ To inspect the effective controls, use `systemctl show nixmaintenance.slice`
 and `cat /sys/fs/cgroup/nixmaintenance.slice/io.max`. Comin's journal records
 evaluation, build, and deployment progress: `journalctl -u comin -f`.
 
-Comin follows `master` immediately; it does **not** wait for GitHub Actions. Merge changes only after the ARM64 checks pass.
+Comin follows `master` immediately; it does **not** wait for GitHub Actions. Before merging application changes, run `NixOS ARM64` manually on the branch and wait for its **Publish and verify the signed application cache** step. Pull-request checks do not receive the cache signing key. This makes the binary available before Comin sees the merge.
+
+Every Sunday at 02:23 UTC (03:23 CET / 04:23 CEST), `Weekly updates` updates all flake inputs and opens a bot PR. It explicitly dispatches validation, checks expensive ARM64 cache availability, builds/tests the system, and publishes the app cache before guarded auto-merge. The merge requires an unchanged tested PR/master revision, only `flake.lock` modified, and unchanged input source identities, branches and dependency wiring. Failed builds/cache checks or broader lock changes leave the PR open for review. The repository must permit GitHub Actions to create PRs; enabling that shared create/approve setting is pending owner approval.
+
+Nix garbage collection runs weekly and removes generations older than 30 days, preserving recent rollback options. Unlike HomeServer's policy of retaining all generations, this bounds usage on the Pi's SD card. Garbage collection shares the update resource limits.
 
 ```sh
 sudo journalctl -u comin -b

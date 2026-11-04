@@ -43,6 +43,7 @@ func main() {
 	pactl := flag.String("pactl", "pactl", "Path to pactl")
 	systemctl := flag.String("systemctl", "systemctl", "Path to systemctl")
 	pairing := flag.String("youtube-pairing", "", "Path to the YouTube TV-code helper")
+	youtubeControl := flag.String("youtube-control", "", "YouTube player helper")
 	flag.Parse()
 	host, port, err := net.SplitHostPort(*listen)
 	if err != nil {
@@ -64,7 +65,7 @@ func main() {
 			authorities = append(authorities, net.JoinHostPort(name, port))
 		}
 	}
-	control := &systemController{pactl: *pactl, systemctl: *systemctl, sink: *sink, pairingCommand: *pairing, run: runCommand}
+	control := &systemController{pactl: *pactl, systemctl: *systemctl, sink: *sink, pairingCommand: *pairing, youtubeCommand: *youtubeControl, spotifyURL: "http://127.0.0.1:3678", run: runCommand}
 	p := newPanel(control, authorities)
 	if *publicOrigin != "" {
 		if err := p.allowPublicOrigin(*publicOrigin); err != nil {
