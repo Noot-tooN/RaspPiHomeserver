@@ -24,6 +24,8 @@ type playerState struct {
 	Volume       *int     `json:"volume"`
 	Muted        bool     `json:"muted"`
 	Title        string   `json:"title"`
+	Artist       string   `json:"artist,omitempty"`
+	TrackID      string   `json:"track_id,omitempty"`
 	Capabilities []string `json:"capabilities"`
 	Error        string   `json:"error,omitempty"`
 }
@@ -137,7 +139,9 @@ type spotifyStatus struct {
 	Volume      int  `json:"volume"`
 	VolumeSteps int  `json:"volume_steps"`
 	Track       *struct {
-		Name string `json:"name"`
+		Name        string   `json:"name"`
+		ArtistNames []string `json:"artist_names"`
+		URI         string   `json:"uri"`
 	} `json:"track"`
 }
 
@@ -165,6 +169,8 @@ func (c *systemController) spotify(ctx context.Context) (playerState, int) {
 	state.Paused = result.Paused
 	if state.Active {
 		state.Title = result.Track.Name
+		state.Artist = strings.Join(result.Track.ArtistNames, ", ")
+		state.TrackID = result.Track.URI
 		state.Capabilities = append(state.Capabilities, "previous", "next")
 		if state.Paused {
 			state.Capabilities = append(state.Capabilities, "play")

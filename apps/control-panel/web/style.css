@@ -65,7 +65,13 @@ h2, h3 { font-size: 18px; line-height: 24px; font-weight: 500; }
 .players-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .player-card { min-width: 0; display: flex; flex-direction: column; }
 .player-controls { display: flex; flex: 1; flex-direction: column; }
-.track { margin: 12px 0 20px; font-size: 15px; line-height: 22px; min-height: 44px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.now-playing { margin: 12px 0 8px; min-height: 44px; }
+.track { margin: 0; font-size: 15px; line-height: 22px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.now-playing.has-artist .track { -webkit-line-clamp: 1; }
+.artist { color: var(--secondary); font-size: 13px; line-height: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spectrum { height: 44px; display: flex; align-items: stretch; gap: 4px; margin-bottom: 20px; color: var(--green); }
+.spectrum span { flex: 1; min-width: 0; background: currentColor; border-radius: 2px 2px 0 0; transform: scaleY(.045); transform-origin: bottom; opacity: .35; transition: transform 110ms linear, opacity 150ms linear; }
+.spectrum.is-live span { opacity: .85; }
 .track.is-idle { color: var(--muted); font-size: 14px; }
 .transport { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 8px; margin: auto 0 24px; }
 .transport .button { padding: 10px 8px; }
@@ -151,7 +157,7 @@ input:disabled { opacity: .45; cursor: not-allowed; }
   #volume-value { font-size: 28px; line-height: 36px; }
   .mute-button { min-width: 72px; padding: 10px 12px; }
   .players-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .track { min-height: 0; margin-bottom: 20px; }
+  .spectrum { height: 36px; }
   .transport { margin-bottom: 20px; }
   .link-input-row { flex-direction: column; gap: 8px; }
   .youtube-panel { margin-top: 20px; }

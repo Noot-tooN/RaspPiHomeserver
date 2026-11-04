@@ -32,7 +32,8 @@
           <div class="player-heading"><h3 id="spotify-title">Spotify</h3><span id="spotify-status" class="badge neutral">Checking</span></div>
           <p id="spotify-detail" class="state-note" hidden></p>
           <div class="player-controls" aria-label="Spotify playback">
-            <p id="spotify-track" class="track">Waiting for player state…</p>
+            <div class="now-playing"><p id="spotify-track" class="track">Waiting for player state…</p><p id="spotify-artist" class="artist" hidden></p></div>
+            <div id="spotify-spectrum" class="spectrum" aria-hidden="true"></div>
             <div class="transport">
               <button id="spotify-previous" class="button" data-player="spotify" data-action="previous" type="button" disabled>Previous</button>
               <button id="spotify-playback" class="button playback-button" data-player="spotify" data-action="play" type="button" disabled>Play</button>
@@ -47,7 +48,8 @@
           <div class="player-heading"><h3 id="youtube-title">YouTube</h3><span id="youtube-status" class="badge neutral">Checking</span></div>
           <p id="youtube-detail" class="state-note" hidden></p>
           <div class="player-controls" aria-label="YouTube playback">
-            <p id="youtube-track" class="track">Waiting for player state…</p>
+            <div class="now-playing"><p id="youtube-track" class="track">Waiting for player state…</p></div>
+            <div id="youtube-spectrum" class="spectrum" aria-hidden="true"></div>
             <div class="transport">
               <button id="youtube-previous" class="button" data-player="youtube" data-action="previous" type="button" disabled>Previous</button>
               <button id="youtube-playback" class="button playback-button" data-player="youtube" data-action="play" type="button" disabled>Play</button>

@@ -119,6 +119,10 @@ advertise this Pi as an exit node or subnet router.
 
 ## Control panel
 
+Each player has an independent audio spectrum, with the Spotify song/artist and
+YouTube video title. Analysis runs only while the panel is visible; audio is
+never recorded or streamed to the browser.
+
 After Tailscale enrollment, open **https://rasppi.tail0fa2e4.ts.net/** for the
 Homer dashboard, matching HomeServer. The Audio link opens **/audio/** for volume,
 Spotify, YouTube, and phone pairing. HTTP redirects to HTTPS; `/audio` redirects

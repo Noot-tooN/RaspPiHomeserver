@@ -3,6 +3,26 @@ const $ = id => document.getElementById(id);
 let current = null, connected = false, busy = false, dragging = false, events = null, noticeTimer, staleTimer;
 const playerDragging = new Set();
 const restartUntil = {spotify: 0, youtube: 0};
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let spectrumTimer;
+const spectrumBars = Object.fromEntries(['spotify', 'youtube'].map(id => {
+  const bars = Array.from({length: 24}, () => document.createElement('span'));
+  $(id + '-spectrum').append(...bars);
+  return [id, bars];
+}));
+
+function renderSpectrum(frame = {}) {
+  for (const id of ['spotify', 'youtube']) {
+    const value = frame[id];
+    const live = !reducedMotion.matches && value?.status === 'live' && value.bands?.length === 24;
+    $(id + '-spectrum').classList.toggle('is-live', live);
+    spectrumBars[id].forEach((bar, index) => {
+      const level = live && Number.isFinite(value.bands[index]) ? value.bands[index] : 0;
+      bar.style.transform = `scaleY(${Math.max(.045, Math.min(1, level / 100))})`;
+    });
+  }
+}
+
 let pairingBusy = false, pairingTimer, pairingRetryAt = 0;
 
 function hidePairing() {
@@ -23,7 +43,7 @@ function connection(online) {
   connected = online;
   $('connection').className = `connection ${online ? 'online' : 'offline'}`;
   $('connection-text').textContent = online ? 'Connected' : 'Reconnecting';
-  if (!online) $('updated').textContent = 'Connection lost · controls paused';
+  if (!online) { $('updated').textContent = 'Connection lost · controls paused'; renderSpectrum(); }
   render();
 }
 
@@ -176,6 +196,13 @@ function renderPlayers() {
     track.hidden = connected && !available;
     track.classList.toggle('is-idle', !player?.active);
     track.title = player?.title || '';
+    if (id === 'spotify') {
+      const artist = $('spotify-artist');
+      artist.textContent = available && player.active ? player.artist || '' : '';
+      artist.title = artist.textContent;
+      artist.hidden = !artist.textContent;
+      track.parentElement.classList.toggle('has-artist', !artist.hidden);
+    }
     const playback = $(id + '-playback');
     playback.dataset.action = player?.paused ? 'play' : 'pause';
     playback.textContent = player?.active && !player.paused ? 'Pause' : 'Play';
@@ -253,9 +280,16 @@ for (const slider of document.querySelectorAll('.slider-row input[type=range]'))
 function connect() {
   if (events) events.close();
   clearTimeout(staleTimer);
+  clearTimeout(spectrumTimer);
+  renderSpectrum();
   if (document.hidden) { events = null; connected = false; render(); return; }
   connection(false);
-  events = new EventSource('api/events');
+  events = new EventSource(reducedMotion.matches ? 'api/events?spectrum=0' : 'api/events');
+  events.addEventListener('spectrum', event => {
+    try { renderSpectrum(JSON.parse(event.data)); } catch { renderSpectrum(); }
+    clearTimeout(spectrumTimer);
+    spectrumTimer = setTimeout(renderSpectrum, 1000);
+  });
   events.onmessage = event => {
     try { current = JSON.parse(event.data); } catch { connection(false); return; }
     clearTimeout(staleTimer);
@@ -266,4 +300,5 @@ function connect() {
   events.onerror = () => { dragging = false; playerDragging.clear(); connection(false); };
 }
 document.addEventListener('visibilitychange', connect);
+reducedMotion.addEventListener('change', connect);
 connect();

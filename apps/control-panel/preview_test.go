@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 )
 
 // Opt-in local UI fixture. This code is excluded from the production binary and
@@ -16,10 +17,27 @@ func TestPreview(t *testing.T) {
 	c := fixtureController()
 	spotifyVolume, youtubeVolume := 37, 65
 	c.state.Players = []playerState{
-		{ID: "spotify", Available: true, Active: true, Volume: &spotifyVolume, Title: "Preview track · Spotify", Capabilities: []string{"volume", "pause", "previous", "next"}},
-		{ID: "youtube", Available: true, Active: true, Paused: true, Volume: &youtubeVolume, Title: "Preview video · YouTube", Capabilities: []string{"volume", "play", "load"}},
+		{ID: "spotify", Available: true, Active: true, Volume: &spotifyVolume, Title: "Midnight City", Artist: "M83", Capabilities: []string{"volume", "pause", "previous", "next"}},
+		{ID: "youtube", Available: true, Active: true, Paused: true, Volume: &youtubeVolume, Title: "A quiet morning in the mountains · ambient session", Capabilities: []string{"volume", "play", "load"}},
 	}
 	p := newPanel(c, []string{"127.0.0.1:8098", "localhost:8098"})
+	p.spectra = &spectrumHub{run: func(ctx context.Context, publish func(spectrumFrame)) {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		left, right := make([]complex128, spectrumSamples), make([]complex128, spectrumSamples)
+		n := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Synthetic PCM in memory only. The paused YouTube fixture stays flat.
+				n++
+				bands := audioSpectrum(testPCM(150+float64(n%40)*35, .2, false), left, right)
+				publish(spectrumFrame{"spotify": {Status: "live", Bands: bands}, "youtube": {Status: "idle"}})
+			}
+		}
+	}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go p.monitor(ctx)

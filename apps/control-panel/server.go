@@ -19,6 +19,7 @@ import (
 var web embed.FS
 
 type panel struct {
+	spectra     *spectrumHub
 	control     controller
 	origins     map[string]string
 	actions     chan struct{}
@@ -105,6 +106,12 @@ func (p *panel) events(w http.ResponseWriter, r *http.Request) {
 		delete(p.clients, client)
 		p.mu.Unlock()
 	}()
+	var spectra <-chan spectrumFrame
+	if p.spectra != nil && r.URL.Query().Get("spectrum") != "0" {
+		var unsubscribe func()
+		spectra, unsubscribe = p.spectra.subscribe()
+		defer unsubscribe()
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("X-Accel-Buffering", "no")
 	response := http.NewResponseController(w)
@@ -117,6 +124,15 @@ func (p *panel) events(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
+		case frame := <-spectra:
+			data, err := json.Marshal(frame)
+			if err != nil {
+				continue
+			}
+			_ = response.SetWriteDeadline(time.Now().Add(2 * time.Second))
+			if _, err := fmt.Fprintf(w, "event: spectrum\ndata: %s\n\n", data); err != nil || response.Flush() != nil {
+				return
+			}
 		case data := <-client:
 			_ = response.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil || response.Flush() != nil {
