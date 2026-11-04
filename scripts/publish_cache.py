@@ -72,7 +72,8 @@ def main():
         # endpoint, not just that GitHub accepted the upload.
         run("nix", "store", "verify", "--store", CACHE, "--sigs-needed", "1",
             "--option", "trusted-public-keys", Path("keys/cache.pub").read_text().strip(),
-            "--option", "narinfo-cache-negative-ttl", "0", output)
+            "--option", "narinfo-cache-negative-ttl", "0", output,
+            env=dict(os.environ, XDG_CACHE_HOME=str(root / "verify-cache")))
         print(f"Verified signed application cache: {output}")
 
 
