@@ -14,11 +14,12 @@
     }).filter(Boolean) : [],
     autoplay: typeof saved?.autoplay === 'boolean' ? saved.autoplay : true,
     currentID: validID(saved?.currentID) ? saved.currentID : '',
+    history: Array.isArray(saved?.history) ? saved.history.filter(validID).slice(-50) : [],
   };
   let error = '', generation = 0, fetching = false;
   let suggested = null, suggestedFor = '', attempted = '';
   let pending = saved?.pending && validID(saved.pending.id) && Number.isFinite(saved.pending.at)
-    ? {id: saved.pending.id, from: validID(saved.pending.from) ? saved.pending.from : '', entryID: typeof saved.pending.entryID === 'string' ? saved.pending.entryID : '', at: saved.pending.at} : null;
+    ? {id: saved.pending.id, from: validID(saved.pending.from) ? saved.pending.from : '', entryID: typeof saved.pending.entryID === 'string' ? saved.pending.entryID : '', previous: saved.pending.previous === true, at: saved.pending.at} : null;
   const player = () => document.getElementById('ytlr-player__player-container-player');
   const videoID = p => p?.getVideoData?.()?.video_id || '';
   const ready = p => p && typeof p.loadVideoById === 'function' && typeof p.getPlayerState === 'function';
@@ -26,14 +27,14 @@
     try { localStorage.setItem(key, JSON.stringify({...state, pending})); }
     catch { error = 'Queue could not be saved. It will last until the receiver restarts.'; }
   };
-  function start(p, id, entryID = '') {
+  function start(p, id, entryID = '', previous = false) {
     const from = videoID(p);
     // Advance the queue only after the new video is observed playing.
     p.loadVideoById({videoId: id, startSeconds: 0});
     generation++;
     suggested = null; suggestedFor = ''; attempted = '';
     state.currentID = id;
-    pending = {id, from, entryID, at: Date.now()};
+    pending = {id, from, entryID, previous, at: Date.now()};
     error = '';
     save();
   }
@@ -62,6 +63,13 @@
     if (pending) {
       if (id === pending.id && [1, 2, 3].includes(status)) {
         if (pending.entryID && state.items[0]?.id === pending.entryID) state.items.shift();
+        // History changes only once the destination is confirmed, just like the queue.
+        if (pending.previous) {
+          if (state.history.at(-1) === pending.id) state.history.pop();
+        } else if (validID(pending.from) && pending.from !== pending.id) {
+          state.history.push(pending.from);
+          state.history = state.history.slice(-50);
+        }
         pending = null;
         save();
       } else if (id && id !== pending.from && id !== pending.id) {
@@ -80,6 +88,7 @@
     if (id && id !== state.currentID) {
       generation++;
       state.items = [];
+      state.history = [];
       state.currentID = '';
       suggested = null; suggestedFor = '';
       error = 'Queue cleared because playback changed outside this panel.';
@@ -114,11 +123,15 @@
     } finally { fetching = false; }
   }
 
+  const nextRecommendation = () => state.autoplay && !state.items.length && suggestedFor === state.currentID && videoID(player()) === state.currentID ? suggested : null;
+  const canNext = () => ready(player()) && !pending && (state.items.length > 0 || !!nextRecommendation());
+  const canPrevious = () => ready(player()) && !pending && state.history.length > 0 && videoID(player()) === state.currentID;
+
   window.rasppiYouTubeQueue = {
     status() {
-      return {queue_count: state.items.length,
+      return {queue_count: state.items.length, can_next: canNext(), can_previous: canPrevious(), navigation_pending: !!pending,
         queue: state.items.map(item => ({...item, starting: pending?.entryID === item.id})),
-        recommendation: state.autoplay && !state.items.length && suggestedFor === state.currentID ? suggested : null,
+        recommendation: nextRecommendation(),
         autoplay_pending: state.autoplay && !state.items.length && !!state.currentID && (!attempted || fetching),
         autoplay: state.autoplay, queue_error: error};
     },
@@ -139,9 +152,13 @@
     },
     next() {
       const p = player();
-      if (!state.items.length || !ready(p)) throw new Error('Queue is empty');
-      if (pending) throw new Error('A video is already starting');
-      start(p, state.items[0].video_id, state.items[0].id);
+      if (!canNext()) throw new Error('Next video unavailable');
+      const entry = state.items[0];
+      start(p, entry ? entry.video_id : nextRecommendation().video_id, entry?.id || '');
+    },
+    previous() {
+      if (!canPrevious()) throw new Error('No previous video');
+      start(player(), state.history.at(-1), '', true);
     },
     remove(entryID) {
       const index = state.items.findIndex(item => item.id === entryID);

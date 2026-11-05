@@ -141,7 +141,10 @@ placeholder. YouTube previews the first queued video or, with an empty queue and
 Autoplay enabled, the prefetched recommendation.
 The separate expandable **Queue** lists only explicitly enqueued videos, with removal
 by a stable entry ID so an old browser view cannot remove a different video.
-**Next** consumes the panel queue before using a native playlist. **Clear queue**
+**Next** plays the first queued video, or the displayed autoplay recommendation when
+the queue is empty. **Previous** returns through up to 50 confirmed receiver playback
+transitions; history survives reloads and resets when a phone takes over. Navigation
+is disabled during a pending load. Native playlist navigation remains a fallback. **Clear queue**
 removes pending entries without stopping playback. The queue holds up to 50 links.
 
 The queue runtime lives in the dedicated TV receiver on the Pi, independent of

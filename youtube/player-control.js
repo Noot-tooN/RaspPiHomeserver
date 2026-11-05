@@ -20,7 +20,8 @@ function controlYouTube(input) {
   const capabilities = [];
   if (queue && typeof player.loadVideoById === 'function') {
     capabilities.push('enqueue', 'autoplay', 'clearqueue', 'removequeue');
-    if (queueState.queue_count > 0) capabilities.push('next');
+    if (queueState.can_next) capabilities.push('next');
+    if (queueState.can_previous) capabilities.push('previous');
   }
   if (typeof player.mute === 'function' && typeof player.unMute === 'function' && typeof player.isMuted === 'function') capabilities.push(muted ? 'unmute' : 'mute');
   if (canSeek) capabilities.push('seek');
@@ -31,8 +32,8 @@ function controlYouTube(input) {
     if (typeof player.pauseVideo === 'function' && [1, 3].includes(status)) capabilities.push('pause');
     // The TV receiver does not always expose its casting queue. Never guess or
     // invoke next/previous without a known playlist position.
-    if (Array.isArray(playlist) && Number.isInteger(index) && index >= 0) {
-      if (index > 0 && typeof player.previousVideo === 'function') capabilities.push('previous');
+    if (!queueState?.navigation_pending && Array.isArray(playlist) && Number.isInteger(index) && index >= 0) {
+      if (!capabilities.includes('previous') && index > 0 && typeof player.previousVideo === 'function') capabilities.push('previous');
       if (!capabilities.includes('next') && index + 1 < playlist.length && typeof player.nextVideo === 'function') capabilities.push('next');
     }
   }
@@ -49,8 +50,10 @@ function controlYouTube(input) {
       queue.remove(input.queueID);
     } else if (input.action === 'clearqueue') {
       queue.clear();
-    } else if (input.action === 'next' && queueState?.queue_count > 0) {
+    } else if (input.action === 'next' && queueState?.can_next) {
       queue.next();
+    } else if (input.action === 'previous' && queueState?.can_previous) {
+      queue.previous();
     } else if (input.action === 'seek') {
       if (!Number.isInteger(input.positionMs) || input.positionMs < 0 || input.positionMs > Math.round(duration * 1000) || input.expectedVideoId !== data.video_id) throw new Error('Video changed or invalid position');
       player.seekTo(input.positionMs / 1000, true);
