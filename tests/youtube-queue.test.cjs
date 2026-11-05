@@ -148,3 +148,66 @@ test('turning autoplay off hides the recommendation', async () => {
   assert.equal(f.q.status().recommendation, null);
   f.media(A, 0); await f.tick(); assert.deepEqual(f.calls, []);
 });
+
+test('Next plays the visible autoplay recommendation and blocks duplicate navigation until acknowledged', async () => {
+  const f = fixture(); f.q.setAutoplay(true); await f.tick();
+  assert.ok(f.control({action: 'state'}).capabilities.includes('next'));
+  assert.ok(!f.control({action: 'state'}).capabilities.includes('previous'));
+  f.control({action: 'next'});
+  assert.deepEqual(f.calls, [C]);
+  assert.throws(() => f.control({action: 'next'}));
+  assert.throws(() => f.control({action: 'previous'}));
+  f.media(C); await f.tick();
+  assert.ok(f.control({action: 'state'}).capabilities.includes('previous'));
+  f.control({action: 'previous'});
+  assert.deepEqual(f.calls, [C, A]);
+  f.media(A); await f.tick();
+  assert.ok(!f.control({action: 'state'}).capabilities.includes('previous'));
+});
+test('Next prioritizes queued videos over recommendations and respects autoplay off', async () => {
+  const f = fixture(); f.q.setAutoplay(true); await f.tick(); f.q.enqueue(B);
+  f.control({action: 'next'}); assert.deepEqual(f.calls, [B]);
+  f.media(B); await f.tick(); f.q.setAutoplay(false);
+  assert.ok(!f.control({action: 'state'}).capabilities.includes('next'));
+  assert.throws(() => f.control({action: 'next'}));
+  assert.ok(f.control({action: 'state'}).capabilities.includes('previous'));
+});
+test('Previous walks confirmed history across reloads without changing queued videos', async () => {
+  const f = fixture(); f.q.setAutoplay(false); f.q.play(B); f.media(B); await f.tick();
+  f.q.play(C); f.media(C); await f.tick(); f.q.enqueue(C);
+  const restored = fixture({storage: f.storage}); restored.media(C);
+  restored.control({action: 'previous'}); restored.media(B); await restored.tick();
+  assert.equal(restored.q.status().queue_count, 1);
+  restored.control({action: 'previous'}); restored.media(A); await restored.tick();
+  assert.deepEqual(restored.calls, [B, A]);
+  assert.throws(() => restored.control({action: 'previous'}));
+});
+test('failed starts do not add history and failed Previous does not discard history', async () => {
+  const f = fixture(); f.q.play(B); f.advance(21000); await f.tick();
+  assert.ok(!f.q.status().can_previous);
+  f.q.play(B); f.media(B); await f.tick();
+  f.q.previous(); f.advance(21000); await f.tick();
+  const saved = JSON.parse([...f.storage.values()][0]);
+  assert.deepEqual(saved.history, [A]);
+});
+test('phone takeover clears history and stale recommendations cannot enable Next', async () => {
+  const f = fixture(); f.q.play(B); f.media(B); await f.tick();
+  assert.ok(f.q.status().can_previous);
+  f.media(A);
+  assert.equal(f.q.status().recommendation, null);
+  assert.equal(f.q.status().can_previous, false);
+  assert.equal(f.q.status().can_next, false);
+  await f.tick();
+  const saved = JSON.parse([...f.storage.values()][0]);
+  assert.deepEqual(saved.history, []);
+});
+test('native playlist navigation remains a fallback, but is blocked while panel navigation is pending', async () => {
+  const f = fixture();
+  f.p.getPlaylist = () => [A, B, C]; f.p.getPlaylistIndex = () => 1;
+  f.p.previousVideo = () => f.calls.push('native-previous'); f.p.nextVideo = () => f.calls.push('native-next');
+  f.control({action: 'previous'}); f.control({action: 'next'});
+  assert.deepEqual(f.calls, ['native-previous', 'native-next']);
+  f.q.play(B);
+  assert.throws(() => f.control({action: 'previous'}));
+  assert.throws(() => f.control({action: 'next'}));
+});

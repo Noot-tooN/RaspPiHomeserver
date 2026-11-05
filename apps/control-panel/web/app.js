@@ -361,7 +361,9 @@ function renderPlayers() {
     for (const action of ['previous', 'next']) {
       const button = $(id + '-' + action);
       setControlDisabled(button, !can(action));
-      button.title = id === 'youtube' && !capabilities.includes(action) ? 'YouTube has not exposed a queue to skip through' : `${action === 'next' ? 'Next' : 'Previous'} ${id === 'spotify' ? 'track' : 'video'}`;
+      button.title = !available ? 'Player unavailable' : id === 'youtube' && !can(action)
+        ? (action === 'next' ? 'No next video available yet' : 'No previous video available yet')
+        : `${action === 'next' ? 'Next' : 'Previous'} ${id === 'spotify' ? 'track' : 'video'} (Shift + ${action === 'next' ? '→' : '←'})`;
     }
     const slider = $(id + '-volume');
     setControlDisabled(slider, !can('volume'));

@@ -406,3 +406,18 @@ test('Spotify Up next updates metadata and clears old artwork when the next trac
   assert.equal(image.hidden, true);
   assert.equal(image.src, undefined);
 });
+
+test('YouTube navigation buttons and Shift-arrow shortcuts follow receiver capabilities', () => {
+  const page = ui(true), state = snapshot(), youtube = state.players[1];
+  youtube.capabilities.push('next', 'previous'); page.receive(state);
+  vm.runInContext("selectPlayer('youtube')", page.context);
+  assert.equal(page.element('youtube-next').disabled, false);
+  assert.equal(page.element('youtube-previous').disabled, false);
+  assert.equal(page.key('ArrowRight', {shiftKey: true}).defaultPrevented, true);
+  assert.equal(page.key('ArrowLeft', {shiftKey: true}).defaultPrevented, true);
+  assert.equal(page.element('youtube-next').clicks, 1);
+  assert.equal(page.element('youtube-previous').clicks, 1);
+  youtube.capabilities = []; page.receive(state);
+  assert.equal(page.key('ArrowRight', {shiftKey: true}).defaultPrevented, undefined);
+  assert.equal(page.element('youtube-previous').title, 'No previous video available yet');
+});
