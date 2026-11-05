@@ -27,7 +27,7 @@ function renderShell() {
 
   }
   const spotify = current?.players?.find(p => p.id === 'spotify');
-  document.querySelector('.spotify-handoff').style.visibility = spotify?.active ? 'hidden' : 'visible';
+  document.querySelector('.spotify-handoff').hidden = Boolean(spotify?.active);
 }
 
 for (const id of playerIDs) {
@@ -97,6 +97,18 @@ document.addEventListener('keydown', event => {
   if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey || drawer.open || help.open || document.hidden) return;
   if (event.target.closest('input, textarea, select, button, a, summary, [contenteditable], [role="slider"], [role="tab"]')) return;
   if (event.key.toLowerCase() === 'h' && !event.shiftKey) { event.preventDefault(); $('open-help').click(); return; }
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    const slider = $(event.shiftKey ? 'volume' : selectedPlayer + '-volume');
+    if (slider.disabled) return;
+    event.preventDefault();
+    const volume = Math.max(0, Math.min(100, Number(slider.value) + (event.key === 'ArrowUp' ? 5 : -5)));
+    if (volume !== Number(slider.value)) {
+      slider.value = volume;
+      slider.dispatchEvent(new Event('input', {bubbles: true}));
+      slider.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+    return;
+  }
   let action;
   if (event.key === 'ArrowLeft') action = event.shiftKey ? 'previous' : 'back';
   else if (event.key === 'ArrowRight') action = event.shiftKey ? 'next' : 'forward';

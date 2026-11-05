@@ -6,7 +6,7 @@ let
     exec ${python}/bin/python ${../scripts}/youtube_pairing.py
   '';
   player = pkgs.writeShellScript "youtube-control" ''
-    exec ${python}/bin/python ${../scripts}/youtube_control.py --script ${../youtube/player-control.js} "$@"
+    exec ${python}/bin/python ${../scripts}/youtube_control.py --script ${../youtube/player-control.js} --queue-script ${../youtube/queue.js} "$@"
   '';
 in
 {

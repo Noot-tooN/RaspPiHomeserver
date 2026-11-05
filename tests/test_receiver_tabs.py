@@ -54,6 +54,16 @@ class ReceiverTabTests(unittest.IsolatedAsyncioTestCase):
             ("Page.navigate", {"url": TV_URL}),
         ])
 
+    async def test_queue_is_installed_before_navigation_and_survives_page_reload(self):
+        browser = FakeBrowser()
+        await initialize_receiver(browser, "name override", "queue runtime")
+        self.assertEqual(browser.calls, [
+            ("Page.enable", {}),
+            ("Page.addScriptToEvaluateOnNewDocument", {"source": "name override"}),
+            ("Page.addScriptToEvaluateOnNewDocument", {"source": "queue runtime"}),
+            ("Page.navigate", {"url": TV_URL}),
+        ])
+
     async def test_late_restored_tab_closes_without_reloading_owned_page(self):
         browser = FakeBrowser()
         target_id = await create_receiver_page(browser)

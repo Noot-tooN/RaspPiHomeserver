@@ -12,13 +12,29 @@ from youtube_receiver import CDP, get_tab
 from youtube_pairing import evaluate, tv_page
 
 
-async def control(action, volume, script, video_id=None, position_ms=None, expected_video_id=None):
+async def control(action, volume, script, video_id=None, position_ms=None, expected_video_id=None, enabled=None, queue_id=None, title=None):
     tab = await asyncio.to_thread(get_tab)
     endpoint = urlsplit(tab.get('webSocketDebuggerUrl', ''))
     if (not tv_page(tab.get('url', '')) or endpoint.scheme != 'ws'
             or endpoint.hostname != '127.0.0.1' or endpoint.port != 9222):
         raise ValueError('Receiver unavailable')
     payload = {'action': action}
+    if action == 'removequeue':
+        if not isinstance(queue_id, str) or not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', queue_id):
+            raise ValueError('Invalid queue entry')
+        payload['queueID'] = queue_id
+    elif queue_id is not None:
+        raise ValueError('Unexpected queue entry')
+    if title is not None:
+        if action != 'enqueue' or not isinstance(title, str) or len(title) > 300:
+            raise ValueError('Unexpected queue title')
+        payload['title'] = title
+    if action == 'autoplay':
+        if type(enabled) is not bool:
+            raise ValueError('Autoplay requires a boolean')
+        payload['enabled'] = enabled
+    elif enabled is not None:
+        raise ValueError('Unexpected autoplay setting')
     if action == 'seek':
         if (type(position_ms) is not int or not 0 <= position_ms <= 604800000
                 or not isinstance(expected_video_id, str)
@@ -28,7 +44,7 @@ async def control(action, volume, script, video_id=None, position_ms=None, expec
     elif position_ms is not None or expected_video_id is not None:
         raise ValueError('Unexpected seek parameters')
     if video_id is not None:
-        if action != 'load' or not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
+        if action not in ('load', 'enqueue') or not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
             raise ValueError('Invalid video ID')
         payload['videoId'] = video_id
     if volume is not None:
@@ -39,13 +55,19 @@ async def control(action, volume, script, video_id=None, position_ms=None, expec
 
 async def main(args):
     async with asyncio.timeout(3):
-        return await control(args.action, args.volume, Path(args.script).read_text(), args.video_id, args.position_ms, args.expected_video_id)
+        script = Path(args.queue_script).read_text() + '\n' if args.queue_script else ''
+        script += Path(args.script).read_text()
+        return await control(args.action, args.volume, script, args.video_id, args.position_ms, args.expected_video_id, None if args.enabled is None else args.enabled == 'true', args.queue_id, args.title)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--script', required=True)
-    parser.add_argument('action', choices=['state', 'volume', 'play', 'pause', 'previous', 'next', 'load', 'seek', 'mute', 'unmute'])
+    parser.add_argument('--queue-script')
+    parser.add_argument('--queue-id')
+    parser.add_argument('--title')
+    parser.add_argument('--enabled', choices=['true', 'false'])
+    parser.add_argument('action', choices=['state', 'volume', 'play', 'pause', 'previous', 'next', 'load', 'seek', 'mute', 'unmute', 'enqueue', 'autoplay', 'clearqueue', 'removequeue'])
     parser.add_argument('volume', type=int, nargs='?')
     parser.add_argument('--video-id')
     parser.add_argument('--position-ms', type=int)
@@ -53,8 +75,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if (args.action == 'volume') != (args.volume is not None) or (args.volume is not None and not 0 <= args.volume <= 100):
         parser.error('Volume requires an integer from 0 to 100')
-    if (args.action == 'load') != (args.video_id is not None) or (args.video_id is not None and not re.fullmatch(r'[A-Za-z0-9_-]{11}', args.video_id)):
+    if (args.action in ('load', 'enqueue')) != (args.video_id is not None) or (args.video_id is not None and not re.fullmatch(r'[A-Za-z0-9_-]{11}', args.video_id)):
         parser.error('Load requires a valid YouTube video ID')
+    if (args.action == 'autoplay') != (args.enabled is not None):
+        parser.error('Autoplay requires --enabled=true or false')
     try:
         print(json.dumps(asyncio.run(main(args))))
     except Exception:

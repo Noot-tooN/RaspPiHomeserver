@@ -162,3 +162,66 @@ printf '%s\n' '{"accepted":true}'
 		t.Fatal(err)
 	}
 }
+
+func TestYouTubeQueueActions(t *testing.T) {
+	c := fixtureController()
+	p := newPanel(c, []string{"rasppi:8090"})
+	for _, body := range []string{
+		`{"player":"youtube","action":"enqueue","url":"https://youtu.be/dQw4w9WgXcQ"}`,
+		`{"player":"youtube","action":"autoplay","enabled":true}`,
+		`{"player":"youtube","action":"autoplay","enabled":false}`,
+		`{"player":"youtube","action":"clearqueue"}`,
+		`{"player":"youtube","action":"removequeue","queue_id":"00000000-0000-4000-8000-000000000001"}`,
+	} {
+		if w := request(p, "/api/player", body); w.Code != 202 {
+			t.Fatalf("valid queue action rejected: %s: %d", body, w.Code)
+		}
+	}
+	calls := c.calls
+	for _, body := range []string{
+		`{"player":"youtube","action":"enqueue","url":"https://example.com/watch?v=dQw4w9WgXcQ"}`,
+		`{"player":"spotify","action":"enqueue","url":"https://youtu.be/dQw4w9WgXcQ"}`,
+		`{"player":"youtube","action":"enqueue","url":"https://youtu.be/dQw4w9WgXcQ","volume":50}`,
+		`{"player":"youtube","action":"autoplay"}`,
+		`{"player":"youtube","action":"autoplay","enabled":"true"}`,
+		`{"player":"spotify","action":"autoplay","enabled":true}`,
+		`{"player":"youtube","action":"autoplay","enabled":true,"url":"https://youtu.be/dQw4w9WgXcQ"}`,
+		`{"player":"youtube","action":"clearqueue","enabled":false}`,
+		`{"player":"youtube","action":"play","enabled":true}`,
+		`{"player":"youtube","action":"removequeue","queue_id":"invalid"}`,
+		`{"player":"spotify","action":"removequeue","queue_id":"00000000-0000-4000-8000-000000000001"}`,
+		`{"player":"youtube","action":"clearqueue","queue_id":"00000000-0000-4000-8000-000000000001"}`,
+	} {
+		if w := request(p, "/api/player", body); w.Code != 400 || c.calls != calls {
+			t.Fatalf("invalid action reached controller: %s: %d", body, w.Code)
+		}
+	}
+}
+
+func TestSpotifyUpcomingTrack(t *testing.T) {
+	for _, tc := range []struct {
+		name, next, artwork string
+		stopped, wantNext   bool
+	}{
+		{name: "resolved", next: `{"name":"Next song","artist_names":["One","Two"],"album_cover_url":"https://i.scdn.co/image/next"}`, artwork: "https://i.scdn.co/image/next", wantNext: true},
+		{name: "untrusted artwork", next: `{"name":"Next song","artist_names":["One","Two"],"album_cover_url":"https://example.com/tracker"}`, wantNext: true},
+		{name: "unknown", next: `null`},
+		{name: "empty metadata", next: `{}`},
+		{name: "stopped", next: `{"name":"Stale song"}`, stopped: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintf(w, `{"volume":50,"volume_steps":100,"stopped":%t,"track":{"name":"Current song"},"next_track":%s}`, tc.stopped, tc.next)
+			}))
+			defer server.Close()
+			c := &systemController{spotifyURL: server.URL}
+			state, _ := c.spotify(context.Background())
+			if (state.NextTrack != nil) != tc.wantNext {
+				t.Fatalf("unexpected upcoming track: %+v", state.NextTrack)
+			}
+			if tc.wantNext && (state.NextTrack.Title != "Next song" || state.NextTrack.Artist != "One, Two" || state.NextTrack.ArtworkURL != tc.artwork) {
+				t.Fatalf("wrong upcoming metadata: %+v", state.NextTrack)
+			}
+		})
+	}
+}

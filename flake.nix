@@ -89,7 +89,7 @@
               cp -r ${./youtube} youtube
               python -m unittest discover -s tests -v
               node tests/receiver-name.test.cjs
-              node --test tests/player-control.test.cjs
+              node --test tests/player-control.test.cjs tests/youtube-queue.test.cjs
               PANEL_WEB_DIR=${./apps/control-panel/web} node --test tests/panel-ui.test.cjs
               touch $out
             '';

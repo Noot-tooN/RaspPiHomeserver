@@ -12,6 +12,8 @@ let
       type = "zeroconf";
       zeroconf.persist_credentials = false;
     };
+    # Resolve the upcoming track for the panel without sweeping whole playlists.
+    metadata.enabled = true;
     volume_steps = 100;
     initial_volume = 50;
     ignore_last_volume = false;

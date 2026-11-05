@@ -128,3 +128,33 @@ The paste-link form still replaces the current YouTube video.
 
 This player-card refinement follows the existing Unslop direction and credit
 above; see `docs/player-card-design.md` at the repository root for the audit.
+
+
+### YouTube queue and autoplay
+
+The link form offers **Play** (replace the current video, retaining queued items)
+and **Enqueue** (append, or start immediately when no video is playing).
+Both players show a compact **Up next** preview beneath the playback controls.
+Spotify reads `next_track` from go-librespot with `metadata.enabled`; no whole-playlist
+sweep or separate Spotify Web API login is needed. Unknown metadata leaves a stable
+placeholder. YouTube previews the first queued video or, with an empty queue and
+Autoplay enabled, the prefetched recommendation.
+The separate expandable **Queue** lists only explicitly enqueued videos, with removal
+by a stable entry ID so an old browser view cannot remove a different video.
+**Next** consumes the panel queue before using a native playlist. **Clear queue**
+removes pending entries without stopping playback. The queue holds up to 50 links.
+
+The queue runtime lives in the dedicated TV receiver on the Pi, independent of
+open control-panel pages. Its entries, pending transition, and Autoplay preference
+persist in the receiver's local storage. Autoplay defaults on for panel-started
+playback: queued videos finish first, then YouTube's explicit Up next recommendation
+is requested from the receiver's same-origin `/youtubei/v1/next` endpoint. This is
+an internal YouTube interface; if its response changes or no recommendation is
+available, playback stops and the panel shows an error instead of guessing a video.
+A newly installed runtime does not start an already-ended video merely because
+someone opens the panel; Play, Enqueue, or explicitly enabling Autoplay arms it.
+
+This queue is separate from a phone's casting queue. A different video selected
+outside the panel clears the panel queue and relinquishes automatic advancement.
+A failed load keeps its queued item for an explicit Next retry. Queue advancement
+requires an ended state, so pausing or buffering does not skip the video.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,11 +17,12 @@ import (
 )
 
 type fakeController struct {
-	mu    sync.Mutex
-	state state
-	calls int
-	reads int
-	fail  bool
+	queueTitles *youtubeTitleCache
+	mu          sync.Mutex
+	state       state
+	calls       int
+	reads       int
+	fail        bool
 }
 
 func fixtureController() *fakeController {
@@ -245,7 +247,12 @@ func TestLiveUpdatesAndIdleMonitor(t *testing.T) {
 	t.Fatal("no state event received")
 }
 
-func (c *fakeController) Player(_ context.Context, action playerAction) error {
+func (c *fakeController) Player(ctx context.Context, action playerAction) error {
+	var queueTitle string
+	if action.Action == "enqueue" && c.queueTitles != nil {
+		id, _ := youtubeVideoID(action.URL)
+		queueTitle = c.queueTitles.title(ctx, id)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls++
@@ -253,6 +260,23 @@ func (c *fakeController) Player(_ context.Context, action playerAction) error {
 		p := &c.state.Players[index]
 		if p.ID != action.Player {
 			continue
+		}
+		if action.Action == "enqueue" {
+			videoID, _ := youtubeVideoID(action.URL)
+			p.Queue = append(p.Queue, queuedVideo{ID: fmt.Sprintf("00000000-0000-4000-8000-%012d", c.calls), VideoID: videoID, Title: queueTitle})
+			p.QueueCount = len(p.Queue)
+		}
+		if action.Action == "removequeue" {
+			p.Queue = slices.DeleteFunc(p.Queue, func(item queuedVideo) bool { return item.ID == action.QueueID })
+			p.QueueCount = len(p.Queue)
+		}
+		if action.Action == "clearqueue" {
+			p.Queue = nil
+			p.QueueCount = 0
+		}
+		if action.Action == "autoplay" {
+			enabled := *action.Enabled
+			p.Autoplay = &enabled
 		}
 		if action.Volume != nil {
 			value := *action.Volume

@@ -16,27 +16,49 @@ import (
 	"time"
 )
 
+type queuedVideo struct {
+	ID       string `json:"id"`
+	VideoID  string `json:"video_id"`
+	Title    string `json:"title"`
+	Starting bool   `json:"starting,omitempty"`
+}
+
+type upcomingTrack struct {
+	Title      string `json:"title"`
+	Artist     string `json:"artist,omitempty"`
+	ArtworkURL string `json:"artwork_url,omitempty"`
+}
+
 type playerState struct {
-	ID           string   `json:"id"`
-	ArtworkURL   string   `json:"artwork_url,omitempty"`
-	PositionMS   *int64   `json:"position_ms"`
-	DurationMS   *int64   `json:"duration_ms"`
-	Live         bool     `json:"live"`
-	ObservedAt   int64    `json:"observed_at"`
-	VideoID      string   `json:"video_id,omitempty"`
-	Available    bool     `json:"available"`
-	Active       bool     `json:"active"`
-	Paused       bool     `json:"paused"`
-	Volume       *int     `json:"volume"`
-	Muted        bool     `json:"muted"`
-	Title        string   `json:"title"`
-	Artist       string   `json:"artist,omitempty"`
-	TrackID      string   `json:"track_id,omitempty"`
-	Capabilities []string `json:"capabilities"`
-	Error        string   `json:"error,omitempty"`
+	NextTrack       *upcomingTrack `json:"next_track,omitempty"`
+	Recommendation  *queuedVideo   `json:"recommendation,omitempty"`
+	AutoplayPending bool           `json:"autoplay_pending,omitempty"`
+	Queue           []queuedVideo  `json:"queue,omitempty"`
+	QueueCount      int            `json:"queue_count,omitempty"`
+	Autoplay        *bool          `json:"autoplay,omitempty"`
+	QueueError      string         `json:"queue_error,omitempty"`
+	ID              string         `json:"id"`
+	ArtworkURL      string         `json:"artwork_url,omitempty"`
+	PositionMS      *int64         `json:"position_ms"`
+	DurationMS      *int64         `json:"duration_ms"`
+	Live            bool           `json:"live"`
+	ObservedAt      int64          `json:"observed_at"`
+	VideoID         string         `json:"video_id,omitempty"`
+	Available       bool           `json:"available"`
+	Active          bool           `json:"active"`
+	Paused          bool           `json:"paused"`
+	Volume          *int           `json:"volume"`
+	Muted           bool           `json:"muted"`
+	Title           string         `json:"title"`
+	Artist          string         `json:"artist,omitempty"`
+	TrackID         string         `json:"track_id,omitempty"`
+	Capabilities    []string       `json:"capabilities"`
+	Error           string         `json:"error,omitempty"`
 }
 
 type playerAction struct {
+	QueueID    string `json:"queue_id,omitempty"`
+	Enabled    *bool  `json:"enabled,omitempty"`
 	Player     string `json:"player"`
 	Action     string `json:"action"`
 	Volume     *int   `json:"volume,omitempty"`
@@ -49,6 +71,21 @@ func (a playerAction) valid() bool {
 	if a.Player != "spotify" && a.Player != "youtube" {
 		return false
 	}
+	if a.Action == "removequeue" {
+		return a.Player == "youtube" && queueIDPattern.MatchString(a.QueueID) && a.Enabled == nil && a.Volume == nil && a.URL == "" && a.PositionMS == nil && a.MediaID == ""
+	}
+	if a.QueueID != "" {
+		return false
+	}
+	if a.Action == "autoplay" {
+		return a.Player == "youtube" && a.Enabled != nil && a.Volume == nil && a.URL == "" && a.PositionMS == nil && a.MediaID == ""
+	}
+	if a.Enabled != nil {
+		return false
+	}
+	if a.Action == "clearqueue" {
+		return a.Player == "youtube" && a.Volume == nil && a.URL == "" && a.PositionMS == nil && a.MediaID == ""
+	}
 	if a.Action == "seek" {
 		if a.Player == "youtube" && !youtubeIDPattern.MatchString(a.MediaID) {
 			return false
@@ -58,7 +95,7 @@ func (a playerAction) valid() bool {
 	if a.PositionMS != nil || a.MediaID != "" {
 		return false
 	}
-	if a.Action == "load" {
+	if a.Action == "load" || a.Action == "enqueue" {
 		_, err := youtubeVideoID(a.URL)
 		return a.Player == "youtube" && a.Volume == nil && err == nil
 	}
@@ -73,6 +110,8 @@ func (a playerAction) valid() bool {
 	}
 	return false
 }
+
+var queueIDPattern = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 
 var youtubeIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
@@ -150,19 +189,22 @@ func (c *systemController) spotifyRequest(ctx context.Context, method, path stri
 	return data, response.StatusCode, nil
 }
 
+type spotifyTrack struct {
+	Name          string   `json:"name"`
+	ArtistNames   []string `json:"artist_names"`
+	URI           string   `json:"uri"`
+	AlbumCoverURL string   `json:"album_cover_url"`
+	Position      int64    `json:"position"`
+	Duration      int64    `json:"duration"`
+}
+
 type spotifyStatus struct {
-	Paused      bool `json:"paused"`
-	Stopped     bool `json:"stopped"`
-	Volume      int  `json:"volume"`
-	VolumeSteps int  `json:"volume_steps"`
-	Track       *struct {
-		Name          string   `json:"name"`
-		ArtistNames   []string `json:"artist_names"`
-		URI           string   `json:"uri"`
-		AlbumCoverURL string   `json:"album_cover_url"`
-		Position      int64    `json:"position"`
-		Duration      int64    `json:"duration"`
-	} `json:"track"`
+	Paused      bool          `json:"paused"`
+	Stopped     bool          `json:"stopped"`
+	Volume      int           `json:"volume"`
+	VolumeSteps int           `json:"volume_steps"`
+	Track       *spotifyTrack `json:"track"`
+	NextTrack   *spotifyTrack `json:"next_track"`
 }
 
 func (c *systemController) spotify(ctx context.Context) (playerState, int) {
@@ -197,6 +239,9 @@ func (c *systemController) spotify(ctx context.Context) (playerState, int) {
 	state.Active = result.Track != nil && !result.Stopped
 	state.Paused = result.Paused
 	if state.Active {
+		if next := result.NextTrack; next != nil && strings.TrimSpace(next.Name) != "" {
+			state.NextTrack = &upcomingTrack{Title: next.Name, Artist: strings.Join(next.ArtistNames, ", "), ArtworkURL: safeArtwork(next.AlbumCoverURL)}
+		}
 		state.Title = result.Track.Name
 		state.Artist = strings.Join(result.Track.ArtistNames, ", ")
 		state.TrackID = result.Track.URI
@@ -262,12 +307,21 @@ func (c *systemController) Player(ctx context.Context, action playerAction) erro
 			return errors.New("YouTube unavailable")
 		}
 		args := []string{action.Action}
-		if action.Action == "load" {
+		if action.QueueID != "" {
+			args = append(args, "--queue-id="+action.QueueID)
+		}
+		if action.Enabled != nil {
+			args = append(args, fmt.Sprintf("--enabled=%t", *action.Enabled))
+		}
+		if action.Action == "load" || action.Action == "enqueue" {
 			id, err := youtubeVideoID(action.URL)
 			if err != nil {
 				return err
 			}
 			args = append(args, "--video-id="+id)
+			if action.Action == "enqueue" {
+				args = append(args, "--title="+c.youtubeTitles.title(ctx, id))
+			}
 		}
 		if action.Action == "seek" {
 			if !youtubeIDPattern.MatchString(action.MediaID) {

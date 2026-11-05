@@ -99,9 +99,11 @@ async def create_receiver_page(browser):
     return target_id
 
 
-async def initialize_receiver(cdp, name_script):
+async def initialize_receiver(cdp, name_script, queue_script=None):
     await cdp.call("Page.enable")
     await cdp.call("Page.addScriptToEvaluateOnNewDocument", {"source": name_script})
+    if queue_script:
+        await cdp.call("Page.addScriptToEvaluateOnNewDocument", {"source": queue_script})
     # This order is essential: attach while blank, inject, THEN navigate.
     await cdp.call("Page.navigate", {"url": TV_URL})
 
@@ -136,7 +138,7 @@ async def supervise(args):
                 tab["webSocketDebuggerUrl"], max_size=8 * 1024 * 1024, max_queue=256,
             ) as socket:
                 cdp = CDP(socket)
-                await initialize_receiver(cdp, Path(args.name_script).read_text())
+                await initialize_receiver(cdp, Path(args.name_script).read_text(), Path(args.queue_script).read_text() if args.queue_script else None)
                 failures = 0
                 while True:
                     await asyncio.sleep(30)
@@ -181,6 +183,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--browser", required=True)
     parser.add_argument("--name-script", required=True)
+    parser.add_argument("--queue-script")
     parser.add_argument("--profile", required=True)
     arguments = parser.parse_args()
     try:
