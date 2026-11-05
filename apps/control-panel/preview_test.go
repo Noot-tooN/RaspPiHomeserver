@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"math"
 	"net/http"
 	"os"
@@ -16,6 +17,20 @@ import (
 func TestPreview(t *testing.T) {
 	if os.Getenv("RASPPI_PANEL_PREVIEW") != "1" {
 		t.Skip("set RASPPI_PANEL_PREVIEW=1 for a local fixture at 127.0.0.1:8098")
+	}
+	// Optional real spectrum capture; replay only, with no production controls.
+	var recordedBands [][spectrumBands]uint8
+	if file := os.Getenv("RASPPI_PANEL_SPECTRUM_FILE"); file != "" {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &recordedBands); err != nil {
+			t.Fatal(err)
+		}
+		if len(recordedBands) == 0 {
+			t.Fatal("spectrum recording is empty")
+		}
 	}
 	c := fixtureController()
 	spotifyVolume, youtubeVolume := 37, 65
@@ -43,7 +58,12 @@ func TestPreview(t *testing.T) {
 				last = now
 				// Synthetic PCM in memory only; neither fake player produces audio.
 				n++
-				bands := audioSpectrum(previewPCM(n), left, right)
+				var bands [spectrumBands]uint8
+				if len(recordedBands) > 0 {
+					bands = recordedBands[(n-1)%len(recordedBands)]
+				} else {
+					bands = audioSpectrum(previewPCM(n), left, right)
+				}
 				c.mu.Lock()
 				active := make(map[string]bool)
 				for i := range c.state.Players {

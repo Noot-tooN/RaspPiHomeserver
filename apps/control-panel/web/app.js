@@ -6,12 +6,12 @@ const restartUntil = {spotify: 0, youtube: 0};
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let spectrumTimer;
 const spectrumBars = Object.fromEntries(['spotify', 'youtube'].map(id => {
-  const bars = Array.from({length: 24}, () => {
+  const bars = Array.from({length: 48}, (_, index) => {
     const column = document.createElement('span'); column.className = 'spectrum-column';
     const fill = document.createElement('span'); fill.className = 'spectrum-fill';
-    const peak = document.createElement('span'); peak.className = 'spectrum-peak';
-    column.append(fill, peak);
-    return {column, fill, peak, level: 0, heldPeak: 0, holdUntil: 0};
+    column.style.setProperty('--wave-delay', `${index * 25}ms`);
+    column.append(fill);
+    return {column, fill, level: 0};
   });
   $(id + '-spectrum').append(...bars.map(bar => bar.column));
   return [id, bars];
@@ -24,16 +24,21 @@ function renderSpectrum(frame = {}) {
     const value = frame[id];
     const live = !document.hidden && !reducedMotion.matches && value?.status === 'live' && value.bands?.length === 24;
     $(id + '-spectrum').classList.toggle('is-live', live);
+    $(id + '-spectrum').classList.toggle('is-idle', !live && !document.hidden && !reducedMotion.matches);
     spectrumBars[id].forEach((bar, index) => {
-      const target = live && Number.isFinite(value.bands[index]) ? Math.max(0, Math.min(1, value.bands[index] / 100)) : 0;
-      // Fast attack, slower release. Peaks hold briefly before falling away.
-      bar.level = live ? Math.max(target, bar.level - seconds * 1.2) : 0;
-      if (!live) { bar.heldPeak = 0; bar.holdUntil = 0; }
-      else if (bar.level >= bar.heldPeak) { bar.heldPeak = bar.level; bar.holdUntil = now + 450; }
-      else if (now > bar.holdUntil) bar.heldPeak = Math.max(bar.level, bar.heldPeak - seconds * .55);
-      bar.fill.style.transitionDuration = target >= bar.level ? '70ms' : '180ms';
-      bar.fill.style.transform = `scaleY(${bar.level})`;
-      bar.peak.style.bottom = `${bar.heldPeak * 100}%`;
+      // Interpolate the server's 24 bands across the finer display bars.
+      const position = index * 23 / (spectrumBars[id].length - 1);
+      const lower = Math.floor(position), fraction = position - lower;
+      // Fixed response curve: quiet bins recede without normalizing silence
+      // into full-height motion. Server values already use a logarithmic scale.
+      const level = band => live && Number.isFinite(value.bands[band])
+        ? Math.pow(Math.max(0, Math.min(1, (value.bands[band] - 15) / 75)), 1.25) : 0;
+      const target = level(lower) * (1 - fraction) + level(Math.min(23, lower + 1)) * fraction;
+      // Quick attack and time-based release preserve transients between frames.
+      const rising = target >= bar.level;
+      bar.level = !live ? 0 : rising ? target : target + (bar.level - target) * Math.exp(-seconds / .14);
+      bar.fill.style.transitionDuration = !live ? '350ms' : rising ? '60ms' : '100ms';
+      bar.fill.style.height = `max(2px, ${bar.level * 100}%)`;
     });
   }
 }

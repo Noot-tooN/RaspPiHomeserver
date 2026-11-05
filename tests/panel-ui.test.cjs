@@ -13,6 +13,7 @@ function ui(shell = false) {
       id, dataset: {}, style: {setProperty() {}}, classList: {toggle() {}, contains() { return false; }},
       textContent: '', value: '0', hidden: false, disabled: true, clientWidth: 300, scrollWidth: 300,
       handlers: {}, clicks: 0, contains(other) { return other === this; }, focus() { document.activeElement = this; }, click() { this.clicks++; for (const fn of this.handlers.click || []) fn({}); },
+      dispatchEvent(event) { for (const fn of this.handlers[event.type] || []) fn(event); },
       showModal() { this.open = true; }, close() { this.open = false; for (const fn of this.handlers.close || []) fn({}); },
       getClientRects() { return [{}]; }, append() {}, addEventListener(name, fn) { (this.handlers[name] ||= []).push(fn); }, setAttribute(key, value) { this[key] = value; },
       removeAttribute(key) { delete this[key]; }, matches() { return false; }
@@ -28,7 +29,7 @@ function ui(shell = false) {
     addEventListener(name, fn) { this.handlers[name] = fn; }
     close() { this.closed = true; }
   }
-  const context = vm.createContext({document, EventSource, window: {addEventListener() {}}, performance: {now: () => now},
+  const context = vm.createContext({document, Event, EventSource, window: {addEventListener() {}}, performance: {now: () => now},
     matchMedia: () => ({matches: true, addEventListener() {}}),
     ResizeObserver: class { observe() {} }, setTimeout() {}, clearTimeout() {}, setInterval() {}
   });
@@ -154,21 +155,31 @@ test('routine playback badges are invisible but failures remain visible', () => 
   assert.equal(page.element('spotify-status').textContent, 'Failed');
 });
 
-test('spectrum clamps invalid levels, holds peaks, and resets when playback stops', () => {
+test('spectrum applies a fixed response curve, releases smoothly, and resets when playback stops', () => {
   const page = ui();
   vm.runInContext('reducedMotion.matches = false;', page.context);
   vm.runInContext("renderSpectrum({spotify:{status:'live',bands:Array(24).fill(80)}})", page.context);
-  assert.equal(vm.runInContext("spectrumBars.spotify[0].level", page.context), .8);
+  assert.ok(Math.abs(vm.runInContext("spectrumBars.spotify[0].level", page.context) - Math.pow(65 / 75, 1.25)) < .0001);
   page.advance(100);
   vm.runInContext("renderSpectrum({spotify:{status:'live',bands:Array(24).fill(20)}})", page.context);
-  assert.equal(vm.runInContext("spectrumBars.spotify[0].heldPeak", page.context), .8);
   assert.ok(vm.runInContext("spectrumBars.spotify[0].level > .2", page.context));
   page.advance(500);
   vm.runInContext("renderSpectrum({spotify:{status:'live',bands:Array(24).fill(NaN)}})", page.context);
   assert.ok(vm.runInContext("Number.isFinite(spectrumBars.spotify[0].level)", page.context));
   vm.runInContext('renderSpectrum()', page.context);
   assert.equal(vm.runInContext("spectrumBars.spotify[0].level", page.context), 0);
-  assert.equal(vm.runInContext("spectrumBars.spotify[0].heldPeak", page.context), 0);
+  assert.equal(vm.runInContext("spectrumBars.spotify[0].fill.style.height", page.context), 'max(2px, 0%)');
+  assert.equal(vm.runInContext("spectrumBars.spotify.length", page.context), 48);
+  vm.runInContext("renderSpectrum({spotify:{status:'live',bands:[0,100,...Array(22).fill(0)]}})", page.context);
+  assert.ok(Math.abs(vm.runInContext("spectrumBars.spotify[1].level", page.context) - 23 / 47) < .0001);
+  vm.runInContext('renderSpectrum()', page.context);
+  vm.runInContext("renderSpectrum({spotify:{status:'live',bands:Array(24).fill(10)}})", page.context);
+  assert.equal(vm.runInContext("spectrumBars.spotify[0].level", page.context), 0);
+  vm.runInContext("renderSpectrum({spotify:{status:'live',bands:Array(24).fill(200)}})", page.context);
+  assert.equal(vm.runInContext("spectrumBars.spotify[0].level", page.context), 1);
+  page.advance(500);
+  vm.runInContext("renderSpectrum({spotify:{status:'live',bands:Array(24).fill(0)}})", page.context);
+  assert.ok(vm.runInContext("spectrumBars.spotify[0].level < .03", page.context));
 });
 
 
@@ -272,4 +283,39 @@ test('failed mute restores controls and keeps the error visible', async () => {
   assert.equal(page.element('spotify-mute').disabled, false);
   assert.equal(page.element('spotify-mute').dataset.pending, 'false');
   assert.equal(page.element('notice').textContent, 'Mute failed');
+});
+
+
+test('volume shortcuts target the selected player or master and respect limits and focus', async () => {
+  const page = ui(true); page.receive(snapshot());
+  vm.runInContext('var requests = []; change = async (path, payload) => { requests.push({path, ...payload}); return true; };', page.context);
+  const requests = () => JSON.parse(vm.runInContext('JSON.stringify(requests)', page.context));
+  assert.equal(page.key('ArrowUp').defaultPrevented, true);
+  await new Promise(setImmediate);
+  assert.deepEqual(requests().at(-1), {path: 'api/player', player: 'spotify', action: 'volume', volume: 70});
+  page.key('ArrowDown', {shiftKey: true});
+  await new Promise(setImmediate);
+  assert.deepEqual(requests().at(-1), {path: 'api/volume', volume: 68});
+  vm.runInContext("selectPlayer('youtube')", page.context);
+  page.receive(snapshot());
+  page.element('youtube-volume').value = 98;
+  page.key('ArrowUp');
+  await new Promise(setImmediate);
+  assert.deepEqual(requests().at(-1), {path: 'api/player', player: 'youtube', action: 'volume', volume: 100});
+  let count = requests().length;
+  page.key('ArrowUp');
+  assert.equal(requests().length, count);
+  page.element('youtube-volume').value = 2;
+  page.key('ArrowDown');
+  await new Promise(setImmediate);
+  assert.equal(requests().at(-1).volume, 0);
+  count = requests().length;
+  for (const options of [{target: {closest: () => true}}, {ctrlKey: true}, {repeat: true}]) {
+    assert.equal(page.key('ArrowUp', options).defaultPrevented, undefined);
+  }
+  page.element('youtube-volume').disabled = true;
+  assert.equal(page.key('ArrowUp').defaultPrevented, undefined);
+  page.element('settings-drawer').open = true;
+  assert.equal(page.key('ArrowDown', {shiftKey: true}).defaultPrevented, undefined);
+  assert.equal(requests().length, count);
 });
