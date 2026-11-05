@@ -4,6 +4,7 @@ let current = null, connected = false, busy = false, dragging = false, events = 
 const playerDragging = new Set();
 const restartUntil = {spotify: 0, youtube: 0};
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const queueRows = new Map();
 let spectrumTimer;
 const spectrumBars = Object.fromEntries(['spotify', 'youtube'].map(id => {
   const bars = Array.from({length: 48}, (_, index) => {
@@ -133,6 +134,15 @@ function render() {
   const canLoad = connected && youtube?.active === 'active' && !youtube.error && Date.now() >= restartUntil.youtube && youtubePlayer?.available && youtubePlayer.capabilities?.includes('load');
   setControlDisabled($('youtube-url'), !canLoad);
   setControlDisabled($('youtube-load'), !canLoad);
+  const queueCount = youtubePlayer?.queue_count || 0;
+  setControlDisabled($('youtube-enqueue'), !canLoad || !youtubePlayer.capabilities?.includes('enqueue') || queueCount >= 50);
+  setControlDisabled($('youtube-autoplay'), !canLoad || !youtubePlayer.capabilities?.includes('autoplay'));
+  $('youtube-autoplay').setAttribute('aria-checked', String(Boolean(youtubePlayer?.autoplay)));
+  setControlDisabled($('youtube-clearqueue'), !canLoad || !queueCount || !youtubePlayer.capabilities?.includes('clearqueue'));
+  $('youtube-queue-count').textContent = queueCount ? `Queue · ${queueCount}` : 'Queue';
+  renderQueue(youtubePlayer, canLoad);
+  $('youtube-queue-error').textContent = youtubePlayer?.queue_error || '';
+  $('youtube-queue-error').hidden = !youtubePlayer?.queue_error;
   renderPairing();
   if (typeof renderShell === 'function') renderShell();
 }
@@ -142,10 +152,102 @@ $('youtube-link-form').addEventListener('submit', async event => {
   const input = $('youtube-url');
   const url = input.value.trim();
   if (input.disabled || !url) return;
+  const action = event.submitter?.value === 'enqueue' ? 'enqueue' : 'load';
+  if ($(action === 'enqueue' ? 'youtube-enqueue' : 'youtube-load').disabled) return;
   hidePairing();
-  if (await change('api/player', {player: 'youtube', action: 'load', url}, 'Video sent to RaspPi')) {
+  if (await change('api/player', {player: 'youtube', action, url}, action === 'enqueue' ? 'Added to the queue' : 'Video sent to RaspPi')) {
     input.value = '';
+    if (action === 'enqueue') {
+      $('youtube-queue-panel').hidden = false;
+      $('youtube-queue-count').setAttribute('aria-expanded', 'true');
+    }
   }
+});
+
+function renderUpNext(id, player) {
+  const queued = player?.queue?.[0];
+  const video = queued || (player?.autoplay ? player.recommendation : null);
+  const next = id === 'spotify' ? player?.next_track : video ? {
+    title: video.title || `Video ${video.video_id}`,
+    artwork_url: /^[A-Za-z0-9_-]{11}$/.test(video.video_id) ? `https://i.ytimg.com/vi/${video.video_id}/default.jpg` : '',
+    artist: queued ? (queued.starting ? 'Starting…' : 'From your queue') : 'YouTube recommendation'
+  } : null;
+  const pending = !next && Boolean(id === 'youtube' && player?.autoplay_pending);
+  const title = next?.title || (!player ? 'Waiting for player…' : !player.available ? 'Player unavailable'
+    : pending ? 'Finding a recommendation…' : id === 'youtube' && !player.autoplay ? 'Nothing queued'
+    : 'Next item not available yet');
+  $(id + '-up-next').setAttribute('aria-busy', String(pending));
+  $(id + '-up-next').dataset.empty = String(!next);
+  $(id + '-up-next-title').textContent = title;
+  $(id + '-up-next-title').title = title;
+  $(id + '-up-next-detail').textContent = next?.artist || (id === 'youtube' && !player?.autoplay && player ? 'Autoplay is off' : '');
+  const artwork = $(id + '-up-next-artwork');
+  const url = next?.artwork_url || '';
+  if (artwork.dataset.url !== url) {
+    artwork.dataset.url = url;
+    artwork.hidden = true;
+    if (url) artwork.src = url; else artwork.removeAttribute('src');
+  }
+}
+
+for (const id of ['spotify', 'youtube']) {
+  const artwork = $(id + '-up-next-artwork');
+  artwork.addEventListener('load', () => { artwork.hidden = !artwork.dataset.url; });
+  artwork.addEventListener('error', () => { artwork.hidden = true; });
+}
+
+function renderQueue(player, available) {
+  const entries = player?.queue || [];
+  const list = $('youtube-queue-list');
+  const ids = new Set(entries.map(entry => entry.id));
+  for (const [id, row] of queueRows) {
+    if (!ids.has(id)) { row.element.remove(); queueRows.delete(id); }
+  }
+  entries.forEach((entry, index) => {
+    let row = queueRows.get(entry.id);
+    if (!row) {
+      const element = document.createElement('li'); element.className = 'queue-entry';
+      const artwork = document.createElement('img'); artwork.alt = ''; artwork.loading = 'lazy'; artwork.referrerPolicy = 'no-referrer';
+      const text = document.createElement('div'); text.className = 'queue-entry-text';
+      const title = document.createElement('span'); title.className = 'queue-entry-title';
+      const detail = document.createElement('span'); detail.className = 'queue-entry-detail';
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button icon-button queue-remove'; remove.textContent = '×';
+      remove.addEventListener('click', () => {
+        if (!remove.disabled) change('api/player', {player: 'youtube', action: 'removequeue', queue_id: entry.id}, 'Removed from queue');
+      });
+      artwork.addEventListener('error', () => { artwork.style.visibility = 'hidden'; });
+      text.append(title, detail); element.append(artwork, text, remove);
+      row = {element, artwork, title, detail, remove}; queueRows.set(entry.id, row);
+    }
+    const title = entry.title || `Video ${entry.video_id}`;
+    row.title.textContent = title; row.title.title = title;
+    row.detail.textContent = entry.starting ? 'Starting…' : `${index + 1} in queue`;
+    const imageURL = /^[A-Za-z0-9_-]{11}$/.test(entry.video_id) ? `https://i.ytimg.com/vi/${entry.video_id}/default.jpg` : '';
+    if (row.artwork.dataset.url !== imageURL) {
+      row.artwork.dataset.url = imageURL; row.artwork.style.visibility = imageURL ? 'visible' : 'hidden';
+      if (imageURL) row.artwork.src = imageURL;
+    }
+    row.remove.setAttribute('aria-label', `Remove ${title} from queue`);
+    setControlDisabled(row.remove, !available || !player?.capabilities?.includes('removequeue') || entry.starting);
+    if (list.children[index] !== row.element) list.insertBefore(row.element, list.children[index] || null);
+  });
+  $('youtube-queue-empty').hidden = entries.length > 0;
+  $('youtube-queue-empty').textContent = 'No queued videos. Add a link with Enqueue.';
+}
+
+$('youtube-queue-count').addEventListener('click', () => {
+  const panel = $('youtube-queue-panel');
+  panel.hidden = !panel.hidden;
+  $('youtube-queue-count').setAttribute('aria-expanded', String(!panel.hidden));
+});
+
+$('youtube-autoplay').addEventListener('click', () => {
+  if ($('youtube-autoplay').disabled) return;
+  const player = current?.players?.find(p => p.id === 'youtube');
+  change('api/player', {player: 'youtube', action: 'autoplay', enabled: !player?.autoplay});
+});
+$('youtube-clearqueue').addEventListener('click', () => {
+  if (!$('youtube-clearqueue').disabled) change('api/player', {player: 'youtube', action: 'clearqueue'}, 'Queue cleared');
 });
 
 function renderPairing() {
@@ -251,6 +353,7 @@ function renderPlayers() {
     const capabilities = available ? player.capabilities || [] : [];
     const can = action => capabilities.includes(action);
     renderMedia(id, player, available);
+    renderUpNext(id, player);
     const playback = $(id + '-playback');
     playback.dataset.action = player?.paused ? 'play' : 'pause';
     setIconButton(playback, player?.active && !player.paused ? 'pause' : 'play', `${player?.active && !player.paused ? 'Pause' : 'Play'} ${id === 'spotify' ? 'Spotify' : 'YouTube'}`);

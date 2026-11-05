@@ -179,7 +179,7 @@ func (p *panel) action(w http.ResponseWriter, r *http.Request) {
 		if !decode(w, r, &input) {
 			return
 		}
-		if input.Player == "youtube" && input.Action == "load" {
+		if input.Player == "youtube" && (input.Action == "load" || input.Action == "enqueue") {
 			if _, parseErr := youtubeVideoID(input.URL); parseErr != nil {
 				fail(w, 400, parseErr.Error())
 				return

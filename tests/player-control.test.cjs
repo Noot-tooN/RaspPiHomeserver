@@ -10,7 +10,7 @@ function fixture(overrides = {}, origin = 'https://www.youtube.com') {
     getPlaylist: () => ['a', 'b', 'c'], getPlaylistIndex: () => 1,
     playVideo: () => calls.push('play'), pauseVideo: () => calls.push('pause'),
     previousVideo: () => calls.push('previous'), nextVideo: () => calls.push('next'), ...overrides};
-  const context = vm.createContext({location: {origin, pathname: '/tv'}, document: {getElementById: () => player}});
+  const context = vm.createContext({window: {}, location: {origin, pathname: '/tv'}, document: {getElementById: () => player}});
   vm.runInContext(source, context);
   return {calls, control: input => context.controlYouTube(input)};
 }

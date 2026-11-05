@@ -15,7 +15,13 @@ function controlYouTube(input) {
   const live = Boolean(data?.isLive || data?.isWindowedLive);
   const muted = typeof player.isMuted === 'function' && player.isMuted();
   const canSeek = active && !live && [1, 2, 3].includes(status) && Number.isFinite(duration) && duration > 0 && duration <= 604800 && Number.isFinite(position) && typeof player.seekTo === 'function';
+  const queue = window.rasppiYouTubeQueue;
+  const queueState = queue?.status();
   const capabilities = [];
+  if (queue && typeof player.loadVideoById === 'function') {
+    capabilities.push('enqueue', 'autoplay', 'clearqueue', 'removequeue');
+    if (queueState.queue_count > 0) capabilities.push('next');
+  }
   if (typeof player.mute === 'function' && typeof player.unMute === 'function' && typeof player.isMuted === 'function') capabilities.push(muted ? 'unmute' : 'mute');
   if (canSeek) capabilities.push('seek');
   if (typeof player.loadVideoById === 'function') capabilities.push('load');
@@ -27,14 +33,24 @@ function controlYouTube(input) {
     // invoke next/previous without a known playlist position.
     if (Array.isArray(playlist) && Number.isInteger(index) && index >= 0) {
       if (index > 0 && typeof player.previousVideo === 'function') capabilities.push('previous');
-      if (index + 1 < playlist.length && typeof player.nextVideo === 'function') capabilities.push('next');
+      if (!capabilities.includes('next') && index + 1 < playlist.length && typeof player.nextVideo === 'function') capabilities.push('next');
     }
   }
   if (input.action !== 'state') {
     if (!capabilities.includes(input.action)) throw new Error('Control unavailable');
-    if (input.action === 'load') {
+    if (input.action === 'load' || input.action === 'enqueue') {
       if (typeof input.videoId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(input.videoId)) throw new Error('Invalid video ID');
-      player.loadVideoById({videoId: input.videoId, startSeconds: 0});
+      if (input.action === 'enqueue') queue.enqueue(input.videoId, input.title);
+      else if (queue) queue.play(input.videoId);
+      else player.loadVideoById({videoId: input.videoId, startSeconds: 0});
+    } else if (input.action === 'autoplay') {
+      queue.setAutoplay(input.enabled);
+    } else if (input.action === 'removequeue') {
+      queue.remove(input.queueID);
+    } else if (input.action === 'clearqueue') {
+      queue.clear();
+    } else if (input.action === 'next' && queueState?.queue_count > 0) {
+      queue.next();
     } else if (input.action === 'seek') {
       if (!Number.isInteger(input.positionMs) || input.positionMs < 0 || input.positionMs > Math.round(duration * 1000) || input.expectedVideoId !== data.video_id) throw new Error('Video changed or invalid position');
       player.seekTo(input.positionMs / 1000, true);
@@ -49,7 +65,7 @@ function controlYouTube(input) {
     }
     return {accepted: true};
   }
-  return {id: 'youtube', available: true, active, paused: ![1, 3].includes(status),
+  return {...queueState, id: 'youtube', available: true, active, paused: ![1, 3].includes(status),
     volume: Number.isFinite(volume) ? Math.round(Math.max(0, Math.min(100, volume))) : null,
     muted, live,
     duration_ms: active && !live && Number.isFinite(duration) && duration > 0 && duration <= 604800 ? Math.round(duration * 1000) : null,

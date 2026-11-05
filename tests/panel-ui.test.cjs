@@ -11,11 +11,13 @@ function ui(shell = false) {
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
       id, dataset: {}, style: {setProperty() {}}, classList: {toggle() {}, contains() { return false; }},
-      textContent: '', value: '0', hidden: false, disabled: true, clientWidth: 300, scrollWidth: 300,
+      children: [], textContent: '', value: '0', hidden: false, disabled: true, clientWidth: 300, scrollWidth: 300,
       handlers: {}, clicks: 0, contains(other) { return other === this; }, focus() { document.activeElement = this; }, click() { this.clicks++; for (const fn of this.handlers.click || []) fn({}); },
       dispatchEvent(event) { for (const fn of this.handlers[event.type] || []) fn(event); },
       showModal() { this.open = true; }, close() { this.open = false; for (const fn of this.handlers.close || []) fn({}); },
-      getClientRects() { return [{}]; }, append() {}, addEventListener(name, fn) { (this.handlers[name] ||= []).push(fn); }, setAttribute(key, value) { this[key] = value; },
+      getClientRects() { return [{}]; }, append(...children) { for (const child of children) this.insertBefore(child, null); },
+      insertBefore(child, before) { if (child.parentNode) child.remove(); const index = before ? this.children.indexOf(before) : this.children.length; this.children.splice(index, 0, child); child.parentNode = this; },
+      remove() { if (this.parentNode) { const parent = this.parentNode; parent.children.splice(parent.children.indexOf(this), 1); this.parentNode = null; } }, addEventListener(name, fn) { (this.handlers[name] ||= []).push(fn); }, setAttribute(key, value) { this[key] = value; },
       removeAttribute(key) { delete this[key]; }, matches() { return false; }
     });
     return elements.get(id);
@@ -318,4 +320,89 @@ test('volume shortcuts target the selected player or master and respect limits a
   page.element('settings-drawer').open = true;
   assert.equal(page.key('ArrowDown', {shiftKey: true}).defaultPrevented, undefined);
   assert.equal(requests().length, count);
+});
+
+test('YouTube form distinguishes Play from Enqueue and renders queue controls', async () => {
+  const page = ui(true), state = snapshot();
+  const youtube = state.players.find(p => p.id === 'youtube');
+  youtube.capabilities.push('enqueue', 'autoplay', 'clearqueue');
+  youtube.queue_count = 2; youtube.autoplay = true;
+  page.receive(state);
+  vm.runInContext('var requests = []; change = async (path, payload) => { requests.push(payload); return true; };', page.context);
+  assert.equal(page.element('youtube-queue-count').textContent, 'Queue · 2');
+  assert.equal(page.element('youtube-autoplay')['aria-checked'], 'true');
+  const form = page.element('youtube-link-form');
+  for (const action of ['load', 'enqueue']) {
+    page.element('youtube-url').value = 'https://youtu.be/abcdefghijk';
+    await form.handlers.submit[0]({preventDefault() {}, submitter: {value: action}});
+    assert.equal(vm.runInContext('requests.at(-1).action', page.context), action);
+    assert.equal(page.element('youtube-url').value, '');
+  }
+  page.element('youtube-autoplay').click();
+  assert.equal(vm.runInContext('requests.at(-1).enabled', page.context), false);
+  page.element('youtube-clearqueue').click();
+  assert.equal(vm.runInContext('requests.at(-1).action', page.context), 'clearqueue');
+  youtube.queue_count = 50; page.receive(state);
+  assert.equal(page.element('youtube-enqueue').disabled, true);
+  page.element('youtube-url').value = 'https://youtu.be/abcdefghijk';
+  const count = vm.runInContext('requests.length', page.context);
+  await form.handlers.submit[0]({preventDefault() {}, submitter: {value: 'enqueue'}});
+  assert.equal(vm.runInContext('requests.length', page.context), count);
+});
+
+test('shared Up next prioritizes queued videos without mixing recommendations into the queue', () => {
+  const page = ui(true), state = snapshot();
+  const youtube = state.players.find(p => p.id === 'youtube');
+  youtube.capabilities.push('enqueue', 'autoplay', 'clearqueue', 'removequeue');
+  youtube.autoplay = true;
+  youtube.recommendation = {video_id: 'ccccccccccc', title: 'Recommended next'};
+  youtube.queue = [{id: '00000000-0000-4000-8000-000000000001', video_id: 'aaaaaaaaaaa', title: '<strong>Real title</strong>'}];
+  youtube.queue_count = 1;
+  page.receive(state);
+  const list = page.element('youtube-queue-list'), row = list.children[0];
+  assert.equal(list.children.length, 1);
+  assert.equal(page.element('youtube-up-next-title').textContent, '<strong>Real title</strong>');
+  assert.equal(page.element('youtube-up-next-detail').textContent, 'From your queue');
+  assert.equal(row.children[1].children[0].textContent, '<strong>Real title</strong>');
+  page.receive(state); assert.equal(list.children[0], row);
+  vm.runInContext('var requests = []; change = async (path, payload) => { requests.push(payload); return true; };', page.context);
+  row.children[2].click();
+  assert.equal(vm.runInContext('requests.at(-1).queue_id', page.context), youtube.queue[0].id);
+  youtube.queue = []; youtube.queue_count = 0; page.receive(state);
+  assert.equal(list.children.length, 0);
+  assert.equal(page.element('youtube-up-next-title').textContent, 'Recommended next');
+  assert.equal(page.element('youtube-up-next-detail').textContent, 'YouTube recommendation');
+  assert.equal(page.element('youtube-queue-empty').hidden, false);
+  youtube.autoplay = false; page.receive(state);
+  assert.equal(list.children.length, 0);
+  assert.equal(page.element('youtube-up-next-title').textContent, 'Nothing queued');
+  assert.equal(page.element('youtube-up-next-artwork').hidden, true);
+  youtube.autoplay = true; youtube.recommendation = null; youtube.autoplay_pending = true; page.receive(state);
+  assert.equal(page.element('youtube-up-next')['aria-busy'], 'true');
+  assert.equal(page.element('youtube-up-next-title').textContent, 'Finding a recommendation…');
+  assert.equal(list.children.length, 0);
+  youtube.autoplay_pending = false; page.receive(state);
+  assert.equal(page.element('youtube-up-next')['aria-busy'], 'false');
+});
+
+
+test('Spotify Up next updates metadata and clears old artwork when the next track becomes unknown', () => {
+  const page = ui(true), state = snapshot();
+  const spotify = state.players[0];
+  spotify.next_track = {title: 'Another track', artist: 'Another artist', artwork_url: 'https://i.scdn.co/image/next'};
+  page.receive(state);
+  assert.equal(page.element('spotify-up-next-title').textContent, 'Another track');
+  assert.equal(page.element('spotify-up-next-detail').textContent, 'Another artist');
+  const image = page.element('spotify-up-next-artwork');
+  image.handlers.load[0]();
+  assert.equal(image.hidden, false);
+  page.receive(state);
+  assert.equal(image.hidden, false);
+  page.visibility(true); page.visibility(false);
+  assert.equal(page.element('spotify-up-next-title').textContent, 'Another track');
+  spotify.next_track = null; page.receive(state);
+  assert.equal(page.element('spotify-up-next-title').textContent, 'Next item not available yet');
+  assert.equal(page.element('spotify-up-next-detail').textContent, '');
+  assert.equal(image.hidden, true);
+  assert.equal(image.src, undefined);
 });

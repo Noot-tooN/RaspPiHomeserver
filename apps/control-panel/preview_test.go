@@ -33,11 +33,29 @@ func TestPreview(t *testing.T) {
 		}
 	}
 	c := fixtureController()
+	c.queueTitles = &youtubeTitleCache{}
+	autoplay := true
 	spotifyVolume, youtubeVolume := 37, 65
 	spotifyPosition, spotifyDuration, youtubePosition, youtubeDuration := int64(72000), int64(244000), int64(3216000), int64(4359000)
 	c.state.Players = []playerState{
 		{ID: "spotify", Available: true, Active: true, Volume: &spotifyVolume, TrackID: "spotify:track:preview", PositionMS: &spotifyPosition, DurationMS: &spotifyDuration, Title: "I Wish You Were Here", Artist: "Alpha Blondy", ArtworkURL: "https://i.scdn.co/image/ab67616d00001e0291f3bb8309fc2ef2066cabfe", Capabilities: []string{"volume", "mute", "seek", "pause", "previous", "next"}},
-		{ID: "youtube", Available: true, Active: true, Paused: true, Volume: &youtubeVolume, VideoID: "gnLwexnUp2o", PositionMS: &youtubePosition, DurationMS: &youtubeDuration, ArtworkURL: "https://i.ytimg.com/vi/gnLwexnUp2o/hqdefault.jpg", Title: "DARK TRANCE MIX | Andrea Botez @ OAKLAND WAREHOUSE [4K]", Artist: "Andrea Botez", Capabilities: []string{"volume", "mute", "seek", "play", "load"}},
+		{ID: "youtube", Autoplay: &autoplay, Available: true, Active: true, Paused: true, Volume: &youtubeVolume, VideoID: "gnLwexnUp2o", PositionMS: &youtubePosition, DurationMS: &youtubeDuration, ArtworkURL: "https://i.ytimg.com/vi/gnLwexnUp2o/hqdefault.jpg", Title: "DARK TRANCE MIX | Andrea Botez @ OAKLAND WAREHOUSE [4K]", Artist: "Andrea Botez", Capabilities: []string{"volume", "mute", "seek", "play", "load", "enqueue", "autoplay", "clearqueue", "removequeue"}},
+	}
+	// Example next-track metadata for layout review, not a live Spotify prediction.
+	c.state.Players[0].NextTrack = &upcomingTrack{Title: "Next track preview", Artist: "Alpha Blondy", ArtworkURL: c.state.Players[0].ArtworkURL}
+	if file := os.Getenv("RASPPI_PANEL_RECOMMENDATION_FILE"); file != "" {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var recommendation queuedVideo
+		if err := json.Unmarshal(data, &recommendation); err != nil {
+			t.Fatal(err)
+		}
+		if !youtubeIDPattern.MatchString(recommendation.VideoID) {
+			t.Fatal("invalid preview recommendation")
+		}
+		c.state.Players[1].Recommendation = &recommendation
 	}
 	p := newPanel(c, []string{"127.0.0.1:8098", "localhost:8098"})
 	p.eq = &equalizer{file: filepath.Join(t.TempDir(), "equalizer.json"), run: func(ctx context.Context, name string, args ...string) ([]byte, error) {

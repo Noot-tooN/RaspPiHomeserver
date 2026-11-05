@@ -46,3 +46,41 @@ class YouTubeSeekTests(unittest.IsolatedAsyncioTestCase):
             await control('seek', None, '// script', position_ms=12000, expected_video_id='abcdefghijk')
         payload = json.loads(evaluate.call_args.args[1].split('\ncontrolYouTube(', 1)[1][:-1])
         self.assertEqual(payload, {'action': 'seek', 'positionMs': 12000, 'expectedVideoId': 'abcdefghijk'})
+
+class YouTubeQueueTests(unittest.IsolatedAsyncioTestCase):
+    async def test_enqueue_and_autoplay_are_bounded_json_commands(self):
+        page = {'url': 'https://www.youtube.com/tv',
+                'webSocketDebuggerUrl': 'ws://127.0.0.1:9222/devtools/page/receiver'}
+        evaluate = AsyncMock(return_value={'accepted': True})
+        with patch('youtube_control.get_tab', return_value=page), \
+             patch('youtube_control.websockets.connect', return_value=AsyncMock()), \
+             patch('youtube_control.evaluate', evaluate):
+            await control('enqueue', None, '// script', video_id='abcdefghijk')
+            payload = json.loads(evaluate.call_args.args[1].split('\ncontrolYouTube(', 1)[1][:-1])
+            self.assertEqual(payload, {'action': 'enqueue', 'videoId': 'abcdefghijk'})
+            await control('autoplay', None, '// script', enabled=False)
+            payload = json.loads(evaluate.call_args.args[1].split('\ncontrolYouTube(', 1)[1][:-1])
+            self.assertEqual(payload, {'action': 'autoplay', 'enabled': False})
+            for enabled in [None, 'true', 1]:
+                with self.assertRaises(ValueError):
+                    await control('autoplay', None, '', enabled=enabled)
+
+
+class YouTubeQueueEntryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_entry_ids_and_titles_are_validated_and_sent_as_json(self):
+        page = {'url': 'https://www.youtube.com/tv',
+                'webSocketDebuggerUrl': 'ws://127.0.0.1:9222/devtools/page/receiver'}
+        evaluate = AsyncMock(return_value={'accepted': True})
+        with patch('youtube_control.get_tab', return_value=page), \
+             patch('youtube_control.websockets.connect', return_value=AsyncMock()), \
+             patch('youtube_control.evaluate', evaluate):
+            entry_id = '00000000-0000-4000-8000-000000000001'
+            await control('removequeue', None, '// script', queue_id=entry_id)
+            payload = json.loads(evaluate.call_args.args[1].split('\ncontrolYouTube(', 1)[1][:-1])
+            self.assertEqual(payload, {'action': 'removequeue', 'queueID': entry_id})
+            await control('enqueue', None, '// script', video_id='abcdefghijk', title='A "quoted" title')
+            payload = json.loads(evaluate.call_args.args[1].split('\ncontrolYouTube(', 1)[1][:-1])
+            self.assertEqual(payload['title'], 'A "quoted" title')
+            for entry in [None, 'invalid', '00000000; echo secret']:
+                with self.assertRaises(ValueError):
+                    await control('removequeue', None, '', queue_id=entry)
