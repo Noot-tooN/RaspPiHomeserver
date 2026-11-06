@@ -1,10 +1,16 @@
 'use strict';
 let selectedPlayer = 'spotify';
 const playerIDs = ['spotify', 'youtube'];
+const playerPreferenceKey = 'rasppi-selected-player';
+try {
+  const saved = localStorage.getItem(playerPreferenceKey);
+  if (playerIDs.includes(saved)) selectedPlayer = saved;
+} catch { /* Storage may be disabled; tab switching still works. */ }
 
 function selectPlayer(id, focus = false) {
   if (!playerIDs.includes(id)) return;
   selectedPlayer = id;
+  try { localStorage.setItem(playerPreferenceKey, id); } catch { /* Optional preference. */ }
   for (const player of playerIDs) {
     const selected = player === id, tab = $(player + '-tab');
     tab.setAttribute('aria-selected', String(selected));
