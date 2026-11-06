@@ -12,19 +12,25 @@ from youtube_receiver import CDP, get_tab
 from youtube_pairing import evaluate, tv_page
 
 
-async def control(action, volume, script, video_id=None, position_ms=None, expected_video_id=None, enabled=None, queue_id=None, title=None):
+async def control(action, volume, script, video_id=None, position_ms=None, expected_video_id=None, enabled=None, queue_id=None, title=None, before_id=None):
     tab = await asyncio.to_thread(get_tab)
     endpoint = urlsplit(tab.get('webSocketDebuggerUrl', ''))
     if (not tv_page(tab.get('url', '')) or endpoint.scheme != 'ws'
             or endpoint.hostname != '127.0.0.1' or endpoint.port != 9222):
         raise ValueError('Receiver unavailable')
     payload = {'action': action}
-    if action == 'removequeue':
+    if action in ('removequeue', 'playqueue', 'reorderqueue'):
         if not isinstance(queue_id, str) or not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', queue_id):
             raise ValueError('Invalid queue entry')
         payload['queueID'] = queue_id
     elif queue_id is not None:
         raise ValueError('Unexpected queue entry')
+    if action == 'reorderqueue':
+        if not isinstance(before_id, str) or (before_id and not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', before_id)) or before_id == queue_id:
+            raise ValueError('Invalid queue destination')
+        payload['beforeID'] = before_id
+    elif before_id is not None:
+        raise ValueError('Unexpected queue destination')
     if title is not None:
         if action != 'enqueue' or not isinstance(title, str) or len(title) > 300:
             raise ValueError('Unexpected queue title')
@@ -57,7 +63,7 @@ async def main(args):
     async with asyncio.timeout(3):
         script = Path(args.queue_script).read_text() + '\n' if args.queue_script else ''
         script += Path(args.script).read_text()
-        return await control(args.action, args.volume, script, args.video_id, args.position_ms, args.expected_video_id, None if args.enabled is None else args.enabled == 'true', args.queue_id, args.title)
+        return await control(args.action, args.volume, script, args.video_id, args.position_ms, args.expected_video_id, None if args.enabled is None else args.enabled == 'true', args.queue_id, args.title, args.before_id)
 
 
 if __name__ == '__main__':
@@ -65,9 +71,10 @@ if __name__ == '__main__':
     parser.add_argument('--script', required=True)
     parser.add_argument('--queue-script')
     parser.add_argument('--queue-id')
+    parser.add_argument('--before-id')
     parser.add_argument('--title')
     parser.add_argument('--enabled', choices=['true', 'false'])
-    parser.add_argument('action', choices=['state', 'volume', 'play', 'pause', 'previous', 'next', 'load', 'seek', 'mute', 'unmute', 'enqueue', 'autoplay', 'clearqueue', 'removequeue'])
+    parser.add_argument('action', choices=['state', 'volume', 'play', 'pause', 'previous', 'next', 'load', 'seek', 'mute', 'unmute', 'enqueue', 'autoplay', 'clearqueue', 'removequeue', 'playqueue', 'reorderqueue'])
     parser.add_argument('volume', type=int, nargs='?')
     parser.add_argument('--video-id')
     parser.add_argument('--position-ms', type=int)

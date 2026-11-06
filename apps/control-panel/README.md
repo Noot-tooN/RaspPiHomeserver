@@ -22,6 +22,14 @@ RASPPI_PANEL_PREVIEW=1 go test -run '^TestPreview$' -timeout=0
 # Open http://127.0.0.1:8098
 ```
 
+Set `RASPPI_PANEL_QUEUE_PREVIEW=1` to seed eight sample entries for checking
+queue scrolling. Use **Clear queue** to compare the empty state. These are fake
+preview entries and do not affect the Pi.
+
+The visualizer is temporarily hidden by default. Append `?visualizer=1` to the
+panel URL to enable it for that page. When off, the page requests no spectrum
+stream and creates no visualizer bars.
+
 The preview's test-only `POST /__test/unavailable` endpoint simulates missing
 audio and a failed YouTube service. None of this fixture is in the shipped
 binary. Stop the preview with Ctrl-C.
@@ -124,7 +132,7 @@ YouTube mute uses native mute/unmute. Spotify mute stores its exact nonzero
 native volume, sets zero, and restores that level on unmute. The private
 systemd state directory preserves the restore value across panel restarts.
 An unknown restore level is never guessed: the volume slider remains usable.
-The paste-link form still replaces the current YouTube video.
+The paste-link form adds videos to the YouTube queue.
 
 This player-card refinement follows the existing Unslop direction and credit
 above; see `docs/player-card-design.md` at the repository root for the audit.
@@ -132,15 +140,36 @@ above; see `docs/player-card-design.md` at the repository root for the audit.
 
 ### YouTube queue and autoplay
 
-The link form offers **Play** (replace the current video, retaining queued items)
-and **Enqueue** (append, or start immediately when no video is playing).
-Both players show a compact **Up next** preview beneath the playback controls.
+The always-visible YouTube list includes a paste-link field and one **Add to queue**
+action (append, or start immediately when the receiver is idle or the video has ended).
+The composer stays above an internally scrolling list. Its height reserves three
+to six complete rows based on viewport size, including when the queue is empty.
+Clicking an entry starts that video; its stable entry ID is removed only after the
+receiver confirms playback, preserving the order of the remaining entries.
+Both players show **Up next** beside the cover on desktop and below the cover
+on mobile. YouTube uses one list: its first queued entry is marked **Next**,
+and a recommendation appears only when the queue is empty and Autoplay is on.
+**Clear queue** stays beside the list, disabled when unavailable. YouTube Autoplay
+lives in Settings and continues with recommendations after queued items finish.
+Both players share bounded, striped rows with decorative empty-slot covers.
+Spotify shows its verified next track; clicking it sends Next. Its unsupported
+remove and reorder controls remain visible but disabled. Routine queue actions
+do not insert success messages; errors use the fixed-height list toolbar.
+Six-dot handles reorder entries with mouse or touch, or with Up/Down and Home/End
+on a focused handle. Moves use entry IDs and persist on the receiver; stale targets
+are rejected, and reordering pauses while a video is starting. Neighbouring rows
+preview the proposed order while dragging, and the drop position stays visible
+until acknowledgement or rollback.
+Phone linking is a separate section below the queue. Twelve fixed digit positions
+(four groups of three) remain visible beside **Request code**. Fetching begins only
+on an explicit request; positions pulse until a code arrives, and return to their
+empty state after five minutes. Further requests respect the pairing cooldown.
 Spotify reads `next_track` from go-librespot with `metadata.enabled`; no whole-playlist
 sweep or separate Spotify Web API login is needed. Unknown metadata leaves a stable
 placeholder. YouTube previews the first queued video or, with an empty queue and
 Autoplay enabled, the prefetched recommendation.
-The separate expandable **Queue** lists only explicitly enqueued videos, with removal
-by a stable entry ID so an old browser view cannot remove a different video.
+The queue lists only explicitly enqueued videos, with removal by a stable entry ID
+so an old browser view cannot remove a different video.
 **Next** plays the first queued video, or the displayed autoplay recommendation when
 the queue is empty. **Previous** returns through up to 50 confirmed receiver playback
 transitions; history survives reloads and resets when a phone takes over. Navigation

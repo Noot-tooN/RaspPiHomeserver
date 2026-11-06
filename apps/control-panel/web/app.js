@@ -4,10 +4,17 @@ let current = null, connected = false, busy = false, dragging = false, events = 
 const playerDragging = new Set();
 const restartUntil = {spotify: 0, youtube: 0};
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+// Temporary opt-in while the player layout is being refined.
+const visualizerEnabled = new URLSearchParams(window.location.search).get('visualizer') === '1';
 const queueRows = new Map();
-let spectrumTimer;
+let queueDrag = null;
+let pendingQueueMove = null;
+let queueMoveTimer;
+let spectrumTimer, connectionTimer;
+let connectionPending = false;
 const spectrumBars = Object.fromEntries(['spotify', 'youtube'].map(id => {
-  const bars = Array.from({length: 48}, (_, index) => {
+  $(id + '-spectrum').hidden = !visualizerEnabled;
+  const bars = Array.from({length: visualizerEnabled ? 48 : 0}, (_, index) => {
     const column = document.createElement('span'); column.className = 'spectrum-column';
     const fill = document.createElement('span'); fill.className = 'spectrum-fill';
     column.style.setProperty('--wave-delay', `${index * 25}ms`);
@@ -19,9 +26,12 @@ const spectrumBars = Object.fromEntries(['spotify', 'youtube'].map(id => {
 }));
 let lastSpectrumAt = performance.now();
 function renderSpectrum(frame = {}) {
+  if (!visualizerEnabled) return;
   const now = performance.now(), seconds = Math.max(0, Math.min(1, (now - lastSpectrumAt) / 1000));
   lastSpectrumAt = now;
   for (const id of ['spotify', 'youtube']) {
+    $(id + '-spectrum').dataset.frozen = String(!connected || document.hidden);
+    if (!connected || document.hidden) continue;
     const value = frame[id];
     const live = !document.hidden && !reducedMotion.matches && value?.status === 'live' && value.bands?.length === 24;
     $(id + '-spectrum').classList.toggle('is-live', live);
@@ -54,24 +64,43 @@ function hidePairing() {
 }
 
 function notice(message, error = false) {
-  if (typeof actionKind !== 'undefined' && actionKind === 'link' && !$('youtube-panel').hidden) {
-    const feedback = $('youtube-action-feedback');
+  clearTimeout(noticeTimer);
+  if ($('settings-drawer').open || !$('youtube-panel').hidden) {
+    const feedback = $($('settings-drawer').open ? 'settings-feedback' : 'youtube-action-feedback');
     feedback.textContent = message;
+    feedback.title = message;
     feedback.className = `action-feedback${error ? ' error' : ''}`;
     feedback.hidden = false;
+    if (!error) noticeTimer = setTimeout(() => { feedback.hidden = true; }, 4000);
     return;
   }
-  clearTimeout(noticeTimer);
   $('notice').textContent = message;
   $('notice').className = error ? 'notice error' : 'notice';
   $('notice').hidden = false;
-  noticeTimer = setTimeout(() => { $('notice').hidden = true; }, error ? 10000 : 5000);
+  if (!error) noticeTimer = setTimeout(() => { $('notice').hidden = true; }, 5000);
 }
 
 function connection(online, label) {
   if (connected && !online) freezeTimelines();
   connected = online;
-  $('connection').className = `connection ${online ? 'online' : 'offline'}`;
+  if (online || document.hidden) {
+    clearTimeout(connectionTimer);
+    connectionTimer = undefined;
+    connectionPending = false;
+    for (const id of ['spotify', 'youtube']) $(id + '-cover').dataset.connecting = 'false';
+  } else if (!connectionPending) {
+    connectionPending = true;
+    // Empty covers already show the note: animate it immediately. Only delay
+    // introducing an overlay over artwork, to avoid flashing on brief outages.
+    for (const id of ['spotify', 'youtube']) {
+      const image = $(id + '-artwork');
+      $(id + '-cover').dataset.connecting = String(image.hidden || !image.dataset.url);
+    }
+    connectionTimer = setTimeout(() => {
+      for (const id of ['spotify', 'youtube']) $(id + '-cover').dataset.connecting = 'true';
+    }, 250);
+  }
+  for (const id of ['spotify', 'youtube']) $(id + '-spectrum').dataset.frozen = String(!online || document.hidden);
   $('connection-text').textContent = label || (online ? 'Connected' : current ? 'Reconnecting' : 'Connecting');
   $('connection').title = online ? 'Live updates' : current ? 'Showing last known values. Controls are paused until fresh data arrives.' : 'Waiting for the Pi';
   if (!online) {
@@ -123,6 +152,7 @@ function render() {
     $(id + '-status').textContent = label;
     $(id + '-status').className = `badge ${style}`;
     $(id + '-status').style.visibility = ['Playing', 'Paused', 'Ready', 'Checking'].includes(label) ? 'hidden' : 'visible';
+    $(id + '-status').hidden = ['Playing', 'Paused', 'Ready', 'Checking'].includes(label);
     $(id + '-detail').textContent = detail;
     $(id + '-detail').hidden = !detail;
     $(id + '-detail').title = detail;
@@ -133,15 +163,14 @@ function render() {
   const youtubePlayer = current?.players?.find(p => p.id === 'youtube');
   const canLoad = connected && youtube?.active === 'active' && !youtube.error && Date.now() >= restartUntil.youtube && youtubePlayer?.available && youtubePlayer.capabilities?.includes('load');
   setControlDisabled($('youtube-url'), !canLoad);
-  setControlDisabled($('youtube-load'), !canLoad);
   const queueCount = youtubePlayer?.queue_count || 0;
   setControlDisabled($('youtube-enqueue'), !canLoad || !youtubePlayer.capabilities?.includes('enqueue') || queueCount >= 50);
   setControlDisabled($('youtube-autoplay'), !canLoad || !youtubePlayer.capabilities?.includes('autoplay'));
   $('youtube-autoplay').setAttribute('aria-checked', String(Boolean(youtubePlayer?.autoplay)));
   setControlDisabled($('youtube-clearqueue'), !canLoad || !queueCount || !youtubePlayer.capabilities?.includes('clearqueue'));
-  $('youtube-queue-count').textContent = queueCount ? `Queue · ${queueCount}` : 'Queue';
   renderQueue(youtubePlayer, canLoad);
   $('youtube-queue-error').textContent = youtubePlayer?.queue_error || '';
+  $('youtube-queue-error').title = youtubePlayer?.queue_error || '';
   $('youtube-queue-error').hidden = !youtubePlayer?.queue_error;
   renderPairing();
   if (typeof renderShell === 'function') renderShell();
@@ -152,19 +181,13 @@ $('youtube-link-form').addEventListener('submit', async event => {
   const input = $('youtube-url');
   const url = input.value.trim();
   if (input.disabled || !url) return;
-  const action = event.submitter?.value === 'enqueue' ? 'enqueue' : 'load';
-  if ($(action === 'enqueue' ? 'youtube-enqueue' : 'youtube-load').disabled) return;
-  hidePairing();
-  if (await change('api/player', {player: 'youtube', action, url}, action === 'enqueue' ? 'Added to the queue' : 'Video sent to RaspPi')) {
-    input.value = '';
-    if (action === 'enqueue') {
-      $('youtube-queue-panel').hidden = false;
-      $('youtube-queue-count').setAttribute('aria-expanded', 'true');
-    }
+  if ($('youtube-enqueue').disabled) return;
+  if (await change('api/player', {player: 'youtube', action: 'enqueue', url})) {
+    if (input.value.trim() === url) input.value = '';
   }
 });
 
-function renderUpNext(id, player) {
+function renderUpNext(id, player, available) {
   const queued = player?.queue?.[0];
   const video = queued || (player?.autoplay ? player.recommendation : null);
   const next = id === 'spotify' ? player?.next_track : video ? {
@@ -175,12 +198,18 @@ function renderUpNext(id, player) {
   const pending = !next && Boolean(id === 'youtube' && player?.autoplay_pending);
   const title = next?.title || (!player ? 'Waiting for player…' : !player.available ? 'Player unavailable'
     : pending ? 'Finding a recommendation…' : id === 'youtube' && !player.autoplay ? 'Nothing queued'
-    : 'Next item not available yet');
+    : 'Nothing up next');
   $(id + '-up-next').setAttribute('aria-busy', String(pending));
   $(id + '-up-next').dataset.empty = String(!next);
   $(id + '-up-next-title').textContent = title;
   $(id + '-up-next-title').title = title;
-  $(id + '-up-next-detail').textContent = next?.artist || (id === 'youtube' && !player?.autoplay && player ? 'Autoplay is off' : '');
+  $(id + '-up-next-detail').textContent = next ? ['Next', next.artist].filter(Boolean).join(' · ') : (id === 'youtube' && !player?.autoplay && player ? 'Autoplay is off' : '');
+  if (id === 'spotify') {
+    const play = $('spotify-up-next-play');
+    setControlDisabled(play, !available || !next || !player?.capabilities?.includes('next'));
+    play.setAttribute('aria-label', next ? `Play next Spotify track: ${title}` : 'Play next Spotify track');
+    renderEmptySlots('spotify', 1);
+  }
   const artwork = $(id + '-up-next-artwork');
   const url = next?.artwork_url || '';
   if (artwork.dataset.url !== url) {
@@ -196,9 +225,152 @@ for (const id of ['spotify', 'youtube']) {
   artwork.addEventListener('error', () => { artwork.hidden = true; });
 }
 
+$('spotify-up-next-play').addEventListener('click', () => {
+  if (!$('spotify-up-next-play').disabled) change('api/player', {player: 'spotify', action: 'next'});
+});
+
+function renderEmptySlots(id, occupied) {
+  const slots = $(id + '-empty-slots');
+  if (!slots.children.length) {
+    for (let index = 0; index < 6; index++) {
+      const row = document.createElement('div'); row.className = 'queue-empty-slot';
+      row.innerHTML = '<span class="queue-artwork"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#artwork-placeholder"/></svg></span><span class="queue-empty-label">Empty slot</span>';
+      slots.append(row);
+    }
+  }
+  slots.style.top = `calc(var(--queue-row-height) * ${Math.min(occupied, 6)})`;
+  slots.hidden = occupied >= 6;
+}
+
+function queuedEntries() {
+  return current?.players?.find(player => player.id === 'youtube')?.queue || [];
+}
+async function moveQueueEntry(id, beforeID) {
+  const entries = queuedEntries(), index = entries.findIndex(entry => entry.id === id);
+  if (pendingQueueMove || index < 0 || (entries[index + 1]?.id || '') === beforeID) return;
+  const ids = entries.filter(entry => entry.id !== id).map(entry => entry.id);
+  const destination = beforeID ? ids.indexOf(beforeID) : ids.length;
+  if (destination < 0) return;
+  ids.splice(destination, 0, id);
+  const move = {baseOrder: entries.map(entry => entry.id).join(','), ids};
+  pendingQueueMove = move;
+  // Keep the drop position visible while the receiver acknowledges the move.
+  render();
+  const applied = await change('api/player', {player: 'youtube', action: 'reorderqueue', queue_id: id, before_id: beforeID});
+  if (applied) {
+    $('queue-announcement').textContent = `Moved ${entries[index].title || 'video'} ${beforeID ? 'in the queue' : 'to the end of the queue'}.`;
+  }
+  if (pendingQueueMove !== move) return;
+  if (!applied) { pendingQueueMove = null; render(); return; }
+  queueMoveTimer = setTimeout(() => {
+    if (pendingQueueMove === move) { pendingQueueMove = null; render(); }
+  }, 3000);
+}
+function cancelQueueDrag() {
+  if (!queueDrag) return;
+  const drag = queueDrag;
+  queueDrag = null;
+  cancelAnimationFrame(drag.frame);
+  if (drag.handle.hasPointerCapture(drag.pointer)) drag.handle.releasePointerCapture(drag.pointer);
+  for (const [index, entry] of queuedEntries().entries()) {
+    const row = queueRows.get(entry.id);
+    if (!row) continue;
+    row.element.style.transform = '';
+    row.element.dataset.dragging = 'false';
+    row.element.dataset.next = String(index === 0);
+    row.detail.textContent = entry.starting ? 'Starting…' : index === 0 ? 'Next' : '';
+    row.detail.hidden = !row.detail.textContent;
+  }
+  $('youtube-queue-list').dataset.dragging = 'false';
+}
+function previewQueueDrop(scroll = true) {
+  if (!queueDrag?.active) return;
+  const drag = queueDrag, list = $('youtube-queue-list'), bounds = list.getBoundingClientRect();
+  const entries = queuedEntries(), sourceIndex = entries.findIndex(entry => entry.id === drag.id);
+  const rowHeight = queueRows.get(drag.id).element.getBoundingClientRect().height;
+  if (!rowHeight || sourceIndex < 0) return;
+  if (scroll) {
+    const edge = 32;
+    const speed = drag.y < bounds.top + edge ? -Math.min(8, (bounds.top + edge - drag.y) / 4)
+      : drag.y > bounds.bottom - edge ? Math.min(8, (drag.y - bounds.bottom + edge) / 4) : 0;
+    list.scrollTop += speed;
+  }
+  // Use untransformed row positions so animated neighbours cannot move the drop target.
+  const top = Math.max(0, Math.min((entries.length - 1) * rowHeight, drag.y - bounds.top + list.scrollTop - drag.offsetY));
+  const destination = Math.max(0, Math.min(entries.length - 1, Math.round(top / rowHeight)));
+  const ids = entries.filter(entry => entry.id !== drag.id).map(entry => entry.id);
+  drag.beforeID = ids[destination] || '';
+  ids.splice(destination, 0, drag.id);
+  list.dataset.dragging = 'true';
+  entries.forEach((entry, index) => {
+    const row = queueRows.get(entry.id), previewIndex = ids.indexOf(entry.id);
+    const offset = entry.id === drag.id ? top - sourceIndex * rowHeight : (previewIndex - index) * rowHeight;
+    row.element.style.transform = `translateY(${offset}px)`;
+    row.element.dataset.dragging = String(entry.id === drag.id);
+    row.element.dataset.next = String(previewIndex === 0);
+    row.detail.textContent = previewIndex === 0 ? 'Next' : '';
+    row.detail.hidden = !row.detail.textContent;
+  });
+}
+function updateQueueDrop() {
+  if (!queueDrag?.active) return;
+  previewQueueDrop();
+  queueDrag.frame = requestAnimationFrame(updateQueueDrop);
+}
+
+function wireQueueHandle(handle, id) {
+  handle.addEventListener('pointerdown', event => {
+    if (handle.disabled || event.button !== 0 || event.isPrimary === false) return;
+    cancelQueueDrag();
+    event.preventDefault(); handle.focus();
+    handle.setPointerCapture(event.pointerId);
+    queueDrag = {id, handle, pointer: event.pointerId, startY: event.clientY, y: event.clientY,
+      active: false, offsetY: event.clientY - queueRows.get(id).element.getBoundingClientRect().top, order: queuedEntries().map(entry => entry.id).join(',')};
+  });
+  handle.addEventListener('pointermove', event => {
+    if (!queueDrag || queueDrag.pointer !== event.pointerId) return;
+    queueDrag.y = event.clientY;
+    if (!queueDrag.active && Math.abs(queueDrag.y - queueDrag.startY) >= 5) {
+      queueDrag.active = true; updateQueueDrop();
+    }
+  });
+  handle.addEventListener('pointerup', event => {
+    if (!queueDrag || queueDrag.pointer !== event.pointerId) return;
+    const drag = queueDrag;
+    drag.y = event.clientY;
+    if (drag.active) previewQueueDrop(false);
+    cancelQueueDrag();
+    if (drag.active) return moveQueueEntry(id, drag.beforeID);
+  });
+  handle.addEventListener('pointercancel', cancelQueueDrag);
+  handle.addEventListener('lostpointercapture', () => { if (queueDrag?.handle === handle) cancelQueueDrag(); });
+  handle.addEventListener('keydown', event => {
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End', 'Escape'].includes(event.key)) return;
+    event.preventDefault(); event.stopPropagation();
+    if (event.key === 'Escape') { cancelQueueDrag(); return; }
+    if (handle.disabled || queueDrag) return;
+    const entries = queuedEntries(), index = entries.findIndex(entry => entry.id === id);
+    if (index < 0) return;
+    if (event.key === 'ArrowUp' && index > 0) return moveQueueEntry(id, entries[index - 1].id);
+    if (event.key === 'ArrowDown' && index < entries.length - 1) return moveQueueEntry(id, entries[index + 2]?.id || '');
+    if (event.key === 'Home' && index > 0) return moveQueueEntry(id, entries[0].id);
+    if (event.key === 'End') return moveQueueEntry(id, '');
+  });
+}
+
 function renderQueue(player, available) {
-  const entries = player?.queue || [];
+  let entries = player?.queue || [];
+  if (pendingQueueMove) {
+    if (entries.map(entry => entry.id).join(',') !== pendingQueueMove.baseOrder) {
+      pendingQueueMove = null; clearTimeout(queueMoveTimer);
+    } else {
+      const byID = new Map(entries.map(entry => [entry.id, entry]));
+      entries = pendingQueueMove.ids.map(id => byID.get(id));
+    }
+  }
+  if (queueDrag && (!available || busy || !player?.capabilities?.includes('reorderqueue') || queueDrag.order !== entries.map(entry => entry.id).join(','))) cancelQueueDrag();
   const list = $('youtube-queue-list');
+  list.dataset.settling = String(Boolean(pendingQueueMove));
   const ids = new Set(entries.map(entry => entry.id));
   for (const [id, row] of queueRows) {
     if (!ids.has(id)) { row.element.remove(); queueRows.delete(id); }
@@ -208,38 +380,54 @@ function renderQueue(player, available) {
     if (!row) {
       const element = document.createElement('li'); element.className = 'queue-entry';
       const artwork = document.createElement('img'); artwork.alt = ''; artwork.loading = 'lazy'; artwork.referrerPolicy = 'no-referrer';
-      const text = document.createElement('div'); text.className = 'queue-entry-text';
+      const cover = document.createElement('span'); cover.className = 'queue-artwork';
+      cover.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#artwork-placeholder"/></svg>';
+      cover.append(artwork);
+      const handle = document.createElement('button'); handle.type = 'button'; handle.className = 'button icon-button queue-handle';
+      handle.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>';
+      handle.setAttribute('aria-describedby', 'queue-reorder-help');
+      wireQueueHandle(handle, entry.id);
+      const play = document.createElement('button'); play.type = 'button'; play.className = 'queue-track queue-play';
+      const text = document.createElement('span'); text.className = 'queue-entry-text';
+      play.addEventListener('click', () => {
+        if (!play.disabled) change('api/player', {player: 'youtube', action: 'playqueue', queue_id: entry.id});
+      });
       const title = document.createElement('span'); title.className = 'queue-entry-title';
       const detail = document.createElement('span'); detail.className = 'queue-entry-detail';
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button icon-button queue-remove'; remove.textContent = '×';
       remove.addEventListener('click', () => {
-        if (!remove.disabled) change('api/player', {player: 'youtube', action: 'removequeue', queue_id: entry.id}, 'Removed from queue');
+        if (!remove.disabled) change('api/player', {player: 'youtube', action: 'removequeue', queue_id: entry.id});
       });
       artwork.addEventListener('error', () => { artwork.style.visibility = 'hidden'; });
-      text.append(title, detail); element.append(artwork, text, remove);
-      row = {element, artwork, title, detail, remove}; queueRows.set(entry.id, row);
+      text.append(title, detail); play.append(cover, text); element.append(handle, play, remove);
+      row = {element, artwork, title, detail, remove, play, handle}; queueRows.set(entry.id, row);
     }
     const title = entry.title || `Video ${entry.video_id}`;
     row.title.textContent = title; row.title.title = title;
-    row.detail.textContent = entry.starting ? 'Starting…' : `${index + 1} in queue`;
+    row.detail.textContent = entry.starting ? 'Starting…' : index === 0 ? 'Next' : '';
+    row.detail.hidden = !row.detail.textContent;
+    row.element.dataset.next = String(index === 0);
     const imageURL = /^[A-Za-z0-9_-]{11}$/.test(entry.video_id) ? `https://i.ytimg.com/vi/${entry.video_id}/default.jpg` : '';
     if (row.artwork.dataset.url !== imageURL) {
       row.artwork.dataset.url = imageURL; row.artwork.style.visibility = imageURL ? 'visible' : 'hidden';
       if (imageURL) row.artwork.src = imageURL;
     }
+    row.handle.setAttribute('aria-label', `Reorder ${title}, position ${index + 1} of ${entries.length}`);
+    setControlDisabled(row.handle, !available || !player?.capabilities?.includes('reorderqueue') || entries.length < 2 || Boolean(pendingQueueMove));
+    row.play.setAttribute('aria-label', `Play ${title}`);
+    row.play.setAttribute('aria-busy', String(Boolean(entry.starting)));
+    setControlDisabled(row.play, !available || !player?.capabilities?.includes('playqueue') || entry.starting);
     row.remove.setAttribute('aria-label', `Remove ${title} from queue`);
     setControlDisabled(row.remove, !available || !player?.capabilities?.includes('removequeue') || entry.starting);
     if (list.children[index] !== row.element) list.insertBefore(row.element, list.children[index] || null);
   });
-  $('youtube-queue-empty').hidden = entries.length > 0;
-  $('youtube-queue-empty').textContent = 'No queued videos. Add a link with Enqueue.';
+  const showRecommendation = !entries.length && Boolean(player?.autoplay && (player?.recommendation || player?.autoplay_pending));
+  $('youtube-recommendation-row').hidden = !showRecommendation;
+  $('youtube-queue-empty').hidden = entries.length > 0 || showRecommendation;
+  $('youtube-queue-empty').textContent = 'Your queue is empty.';
+  renderEmptySlots('youtube', Math.max(1, entries.length));
+  if (queueDrag?.active) previewQueueDrop(false);
 }
-
-$('youtube-queue-count').addEventListener('click', () => {
-  const panel = $('youtube-queue-panel');
-  panel.hidden = !panel.hidden;
-  $('youtube-queue-count').setAttribute('aria-expanded', String(!panel.hidden));
-});
 
 $('youtube-autoplay').addEventListener('click', () => {
   if ($('youtube-autoplay').disabled) return;
@@ -247,24 +435,22 @@ $('youtube-autoplay').addEventListener('click', () => {
   change('api/player', {player: 'youtube', action: 'autoplay', enabled: !player?.autoplay});
 });
 $('youtube-clearqueue').addEventListener('click', () => {
-  if (!$('youtube-clearqueue').disabled) change('api/player', {player: 'youtube', action: 'clearqueue'}, 'Queue cleared');
+  if (!$('youtube-clearqueue').disabled) change('api/player', {player: 'youtube', action: 'clearqueue'});
 });
 
 function renderPairing() {
   const valid = Boolean(pairingCode) && Date.now() < pairingExpiresAt;
   const service = current?.services.find(s => s.id === 'youtube');
   const ready = connected && service?.active === 'active' && !service.error && Date.now() >= restartUntil.youtube;
-  $('pairing-code').textContent = valid ? pairingCode.match(/.{3}/g).join(' ') : '';
-  $('pairing-code').hidden = !valid;
-  $('pairing-placeholder').hidden = !pairingBusy;
+  $('pairing-code').textContent = valid ? pairingCode.match(/.{3}/g).join(' ') : '··· ··· ··· ···';
+  $('pairing-code').dataset.empty = String(!valid);
+  $('pairing-code').setAttribute('aria-label', valid ? `YouTube TV code ${pairingCode.split('').join(' ')}` : pairingBusy ? 'Getting YouTube TV code' : 'YouTube TV code not requested');
   $('pairing-result').setAttribute('aria-busy', String(pairingBusy));
-  $('youtube-pair').hidden = valid || pairingBusy;
-  setControlDisabled($('youtube-pair'), !ready || Date.now() < pairingRetryAt);
-  $('pairing-status').textContent = valid ? 'YouTube on your phone → Cast → Link with TV code' : pairingBusy ? 'Getting your TV code…' : !ready ? 'YouTube must be connected and running to get a code.' : pairingError || 'Code expired. Retry to get a new code.';
+  setControlDisabled($('youtube-pair'), !ready || pairingBusy || Date.now() < pairingRetryAt);
+  $('pairing-status').textContent = pairingBusy ? 'Getting your TV code…' : !ready ? 'YouTube must be connected and running to get a code.' : pairingError || 'YouTube on your phone → Cast → Link with TV code';
   $('pairing-status').className = pairingError && !valid && !pairingBusy ? 'hint error' : 'hint';
 }
 async function requestPairing() {
-  if (pairingCode && Date.now() < pairingExpiresAt) { renderPairing(); return; }
   const service = current?.services.find(s => s.id === 'youtube');
   if (pairingBusy || busy || !connected || service?.active !== 'active' || service.error || Date.now() < pairingRetryAt || Date.now() < restartUntil.youtube) { renderPairing(); return; }
   hidePairing();
@@ -280,7 +466,7 @@ async function requestPairing() {
     if (!response.ok) throw new Error(result.error || 'Could not get a TV code');
     if (!/^[0-9]{12}$/.test(result.code)) throw new Error('YouTube returned an unreadable TV code. Try again.');
     if (epoch !== pairingEpoch) return;
-    // Memory only: reopening the field can reuse a recent code without interrupting playback.
+    // Memory only; an explicit request refreshes the code, which expires after five minutes.
     pairingCode = result.code;
     pairingExpiresAt = Date.now() + 5 * 60 * 1000;
     pairingTimer = setTimeout(hidePairing, 5 * 60 * 1000);
@@ -296,6 +482,10 @@ $('youtube-pair').addEventListener('click', requestPairing);
 
 async function change(path, payload, message) {
   if (busy || !connected) return false;
+  clearTimeout(noticeTimer);
+  $('youtube-action-feedback').hidden = true;
+  $('settings-feedback').hidden = true;
+  $('notice').hidden = true;
   busy = true; render();
   try {
     const response = await fetch(path, {
@@ -353,7 +543,7 @@ function renderPlayers() {
     const capabilities = available ? player.capabilities || [] : [];
     const can = action => capabilities.includes(action);
     renderMedia(id, player, available);
-    renderUpNext(id, player);
+    renderUpNext(id, player, available);
     const playback = $(id + '-playback');
     playback.dataset.action = player?.paused ? 'play' : 'pause';
     setIconButton(playback, player?.active && !player.paused ? 'pause' : 'play', `${player?.active && !player.paused ? 'Pause' : 'Play'} ${id === 'spotify' ? 'Spotify' : 'YouTube'}`);
@@ -379,7 +569,7 @@ function renderPlayers() {
 }
 
 for (const button of document.querySelectorAll('[data-player]')) {
-  button.addEventListener('click', () => change('api/player', {player: button.dataset.player, action: button.dataset.action}, ['mute', 'unmute'].includes(button.dataset.action) ? null : 'Playback command sent'));
+  button.addEventListener('click', () => change('api/player', {player: button.dataset.player, action: button.dataset.action}, null));
 }
 for (const id of ['spotify', 'youtube']) {
   const slider = $(id + '-volume');
@@ -433,13 +623,12 @@ function connect() {
   if (events) events.close();
   clearTimeout(staleTimer);
   clearTimeout(spectrumTimer);
-  renderSpectrum();
   if (document.hidden) { events = null; connection(false, 'Updates paused'); return; }
   connection(false);
-  const source = new EventSource(reducedMotion.matches ? 'api/events?spectrum=0' : 'api/events');
+  const source = new EventSource(!visualizerEnabled || reducedMotion.matches ? 'api/events?spectrum=0' : 'api/events');
   events = source;
   source.addEventListener('spectrum', event => {
-    if (events !== source || document.hidden) return;
+    if (!visualizerEnabled || events !== source || document.hidden) return;
     try { renderSpectrum(JSON.parse(event.data)); } catch { renderSpectrum(); }
     clearTimeout(spectrumTimer);
     spectrumTimer = setTimeout(renderSpectrum, 1000);

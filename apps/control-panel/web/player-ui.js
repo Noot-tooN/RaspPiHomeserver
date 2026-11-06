@@ -18,7 +18,9 @@ function formatTime(milliseconds) {
 function mediaID(player) { return player?.id === 'youtube' ? player.video_id : player?.track_id; }
 function titleMotion(id) {
   const box = $(id + '-track-box'), track = $(id + '-track');
-  const distance = Math.max(0, track.scrollWidth - box.clientWidth);
+  const overlay = box.dataset.overlay === 'true';
+  const distance = overlay ? 0 : Math.max(0, track.scrollWidth - box.clientWidth);
+  box.title = overlay ? track.textContent : '';
   const previous = titleAnimations.get(id);
   const animate = box.getClientRects().length > 0 && distance > 4 && box.dataset.active === 'true' && !document.hidden && !reducedMotion.matches;
   box.classList.toggle('is-overflowing', distance > 4);
@@ -52,10 +54,15 @@ function renderMedia(id, player, available) {
   artist.title = artist.textContent;
   const image = $(id + '-artwork');
   const url = player?.active ? player.artwork_url || '' : '';
-  if (image.dataset.url !== url) {
+  if (image.dataset.source !== url) {
     image.hidden = true;
-    image.dataset.url = url;
-    if (url) image.src = url; else image.removeAttribute('src');
+    image.dataset.source = url;
+    // Prefer the unpadded, high-resolution thumbnail for the large cover.
+    // Remember the source separately so snapshots do not retry a failed size.
+    const youtubeThumbnail = id === 'youtube' && /^https:\/\/i\.ytimg\.com\/vi\/[A-Za-z0-9_-]{11}\/hqdefault\.jpg$/.test(url);
+    image.dataset.url = youtubeThumbnail ? url.replace('/hqdefault.jpg', '/maxresdefault.jpg') : url;
+    image.dataset.fallback = youtubeThumbnail ? url.replace('/hqdefault.jpg', '/mqdefault.jpg') : '';
+    if (url) image.src = image.dataset.url; else image.removeAttribute('src');
   }
   titleMotion(id);
   const muted = Boolean(player?.muted);
@@ -120,8 +127,22 @@ async function skipPlayer(id, seconds) {
 function initPlayerUI() {
   for (const id of ['spotify', 'youtube']) {
     const image = $(id + '-artwork');
-    image.addEventListener('load', () => { image.hidden = !image.dataset.url || image.currentSrc !== image.dataset.url; });
-    image.addEventListener('error', () => { image.hidden = true; });
+    const fallbackArtwork = () => {
+      if (image.currentSrc && image.currentSrc !== image.dataset.url) return;
+      image.hidden = true;
+      if (image.dataset.fallback) {
+        image.dataset.url = image.dataset.fallback;
+        image.dataset.fallback = '';
+        image.src = image.dataset.url;
+      }
+    };
+    image.addEventListener('load', () => {
+      if (image.currentSrc !== image.dataset.url) return;
+      // Some unavailable sizes return a tiny placeholder rather than an error.
+      if (image.dataset.fallback && image.naturalWidth <= 120) { fallbackArtwork(); return; }
+      image.hidden = !image.dataset.url;
+    });
+    image.addEventListener('error', fallbackArtwork);
     const box = $(id + '-track-box');
     new ResizeObserver(() => titleMotion(id)).observe(box);
     const pause = () => titleAnimations.get(id)?.animation?.pause();

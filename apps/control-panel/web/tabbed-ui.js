@@ -45,43 +45,14 @@ for (const id of playerIDs) {
   $(id + '-forward').addEventListener('click', () => skipPlayer(id, 15));
 }
 
-let actionKind = 'link';
-function openYouTubeAction(kind) {
-  if (!['link', 'pairing'].includes(kind)) return;
-  const changed = actionKind !== kind;
-  actionKind = kind;
-  $('youtube-actions').hidden = false;
-  $('youtube-link-form').hidden = kind !== 'link';
-  $('youtube-pairing-pane').hidden = kind !== 'pairing';
-  if (changed) $('youtube-action-feedback').hidden = true;
-  for (const value of ['link', 'pairing']) {
-    const button = $('youtube-open-' + value);
-    button.setAttribute('aria-checked', String(value === kind));
-    button.tabIndex = value === kind ? 0 : -1;
-  }
-  if (changed && kind === 'pairing') return requestPairing();
-}
-for (const kind of ['link', 'pairing']) {
-  const button = $('youtube-open-' + kind);
-  button.addEventListener('click', () => openYouTubeAction(kind));
-  button.addEventListener('keydown', event => {
-    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    let next;
-    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) next = kind === 'link' ? 'pairing' : 'link';
-    if (event.key === 'Home') next = 'link';
-    if (event.key === 'End') next = 'pairing';
-    if (next) { event.preventDefault(); openYouTubeAction(next); $('youtube-open-' + next).focus(); }
-  });
-}
-const infoOption = $('youtube-open-pairing'), infoTip = $('pairing-info-tip');
+const infoOption = $('youtube-pair'), infoTip = $('pairing-info-tip');
 infoOption.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') infoTip.hidden = false; });
 infoOption.addEventListener('pointerleave', () => { infoTip.hidden = true; });
-$('youtube-open-pairing').addEventListener('focus', () => { infoTip.hidden = false; });
-$('youtube-open-pairing').addEventListener('blur', () => { infoTip.hidden = true; });
+$('youtube-pair').addEventListener('focus', () => { infoTip.hidden = false; });
+$('youtube-pair').addEventListener('blur', () => { infoTip.hidden = true; });
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !infoTip.hidden) { infoTip.hidden = true; event.preventDefault(); }
 });
-openYouTubeAction('link');
 
 const drawer = $('settings-drawer'), help = $('shortcut-help');
 for (const [dialog, openID, closeID] of [[drawer, 'open-settings', 'close-settings'], [help, 'open-help', 'close-help']]) {
@@ -118,3 +89,19 @@ document.addEventListener('keydown', event => {
 });
 selectPlayer(selectedPlayer);
 renderShell();
+
+
+const mobileArtworkLayout = matchMedia('(max-width: 760px)');
+
+// Reuse the live controls when changing layouts: no duplicate sliders/listeners.
+const coverPlaybackLayout = matchMedia('(max-width: 760px) and (min-height: 600px)');
+function placePlaybackControls() {
+  for (const id of playerIDs) {
+    const controls = $(id + '-playback-controls');
+    const destination = $(id + (!mobileArtworkLayout.matches || coverPlaybackLayout.matches ? '-cover' : '-compact-playback-slot'));
+    if (controls.parentNode !== destination) destination.append(controls);
+  }
+}
+coverPlaybackLayout.addEventListener('change', placePlaybackControls);
+mobileArtworkLayout.addEventListener('change', placePlaybackControls);
+placePlaybackControls();

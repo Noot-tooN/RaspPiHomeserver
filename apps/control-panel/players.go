@@ -57,21 +57,28 @@ type playerState struct {
 }
 
 type playerAction struct {
-	QueueID    string `json:"queue_id,omitempty"`
-	Enabled    *bool  `json:"enabled,omitempty"`
-	Player     string `json:"player"`
-	Action     string `json:"action"`
-	Volume     *int   `json:"volume,omitempty"`
-	URL        string `json:"url,omitempty"`
-	PositionMS *int64 `json:"position_ms,omitempty"`
-	MediaID    string `json:"media_id,omitempty"`
+	BeforeID   *string `json:"before_id,omitempty"`
+	QueueID    string  `json:"queue_id,omitempty"`
+	Enabled    *bool   `json:"enabled,omitempty"`
+	Player     string  `json:"player"`
+	Action     string  `json:"action"`
+	Volume     *int    `json:"volume,omitempty"`
+	URL        string  `json:"url,omitempty"`
+	PositionMS *int64  `json:"position_ms,omitempty"`
+	MediaID    string  `json:"media_id,omitempty"`
 }
 
 func (a playerAction) valid() bool {
 	if a.Player != "spotify" && a.Player != "youtube" {
 		return false
 	}
-	if a.Action == "removequeue" {
+	if a.Action == "reorderqueue" {
+		return a.Player == "youtube" && queueIDPattern.MatchString(a.QueueID) && a.BeforeID != nil && (*a.BeforeID == "" || queueIDPattern.MatchString(*a.BeforeID)) && *a.BeforeID != a.QueueID && a.Enabled == nil && a.Volume == nil && a.URL == "" && a.PositionMS == nil && a.MediaID == ""
+	}
+	if a.BeforeID != nil {
+		return false
+	}
+	if a.Action == "removequeue" || a.Action == "playqueue" {
 		return a.Player == "youtube" && queueIDPattern.MatchString(a.QueueID) && a.Enabled == nil && a.Volume == nil && a.URL == "" && a.PositionMS == nil && a.MediaID == ""
 	}
 	if a.QueueID != "" {
@@ -309,6 +316,9 @@ func (c *systemController) Player(ctx context.Context, action playerAction) erro
 		args := []string{action.Action}
 		if action.QueueID != "" {
 			args = append(args, "--queue-id="+action.QueueID)
+		}
+		if action.BeforeID != nil {
+			args = append(args, "--before-id="+*action.BeforeID)
 		}
 		if action.Enabled != nil {
 			args = append(args, fmt.Sprintf("--enabled=%t", *action.Enabled))

@@ -5,8 +5,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // Run the real UI state handlers without a network, player, or audio device.
-function ui(shell = false) {
-  const elements = new Map(), listeners = {}, sources = [];
+function ui(shell = false, visualizer = false) {
+  const elements = new Map(), listeners = {}, sources = [], timers = new Map();
+  let timerID = 0;
   let now = 1000;
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
@@ -15,7 +16,7 @@ function ui(shell = false) {
       handlers: {}, clicks: 0, contains(other) { return other === this; }, focus() { document.activeElement = this; }, click() { this.clicks++; for (const fn of this.handlers.click || []) fn({}); },
       dispatchEvent(event) { for (const fn of this.handlers[event.type] || []) fn(event); },
       showModal() { this.open = true; }, close() { this.open = false; for (const fn of this.handlers.close || []) fn({}); },
-      getClientRects() { return [{}]; }, append(...children) { for (const child of children) this.insertBefore(child, null); },
+      getClientRects() { return [{}]; }, setPointerCapture(id) { this.capture = id; }, hasPointerCapture(id) { return this.capture === id; }, releasePointerCapture() { this.capture = null; }, append(...children) { for (const child of children) this.insertBefore(child, null); },
       insertBefore(child, before) { if (child.parentNode) child.remove(); const index = before ? this.children.indexOf(before) : this.children.length; this.children.splice(index, 0, child); child.parentNode = this; },
       remove() { if (this.parentNode) { const parent = this.parentNode; parent.children.splice(parent.children.indexOf(this), 1); this.parentNode = null; } }, addEventListener(name, fn) { (this.handlers[name] ||= []).push(fn); }, setAttribute(key, value) { this[key] = value; },
       removeAttribute(key) { delete this[key]; }, matches() { return false; }
@@ -27,17 +28,18 @@ function ui(shell = false) {
     querySelector: element, querySelectorAll: () => [], addEventListener(name, fn) { (listeners[name] ||= []).push(fn); }
   };
   class EventSource {
-    constructor() { this.handlers = {}; sources.push(this); }
+    constructor(url) { this.url = url; this.handlers = {}; sources.push(this); }
     addEventListener(name, fn) { this.handlers[name] = fn; }
     close() { this.closed = true; }
   }
-  const context = vm.createContext({document, Event, EventSource, window: {addEventListener() {}}, performance: {now: () => now},
+  const context = vm.createContext({document, Event, EventSource, URLSearchParams, window: {location: {search: visualizer ? "?visualizer=1" : ""}, addEventListener() {}}, performance: {now: () => now},
     matchMedia: () => ({matches: true, addEventListener() {}}),
-    ResizeObserver: class { observe() {} }, setTimeout() {}, clearTimeout() {}, setInterval() {}
+    requestAnimationFrame() { return 1; }, cancelAnimationFrame() {}, ResizeObserver: class { observe() {} }, setTimeout(fn, delay) { timers.set(++timerID, {fn, delay}); return timerID; }, clearTimeout(id) { timers.delete(id); }, setInterval() {}
   });
   const web = process.env.PANEL_WEB_DIR || path.join(__dirname, '../apps/control-panel/web');
   for (const name of ['player-ui.js', 'app.js', ...(shell ? ['tabbed-ui.js'] : [])]) vm.runInContext(fs.readFileSync(path.join(web, name), 'utf8'), context);
   return {element, sources, context,
+    flushDelay(delay) { for (const [id, timer] of [...timers]) if (timer.delay === delay) { timers.delete(id); timer.fn(); } },
     key(key, options = {}) { const event = {key, code: key === ' ' ? 'Space' : key, target: {closest: () => false}, preventDefault() { this.defaultPrevented = true; }, ...options}; for (const fn of listeners.keydown || []) fn(event); return event; },
     advance(ms) { now += ms; },
     visibility(hidden) { document.hidden = hidden; listeners.visibilitychange.forEach(fn => fn()); },
@@ -158,7 +160,7 @@ test('routine playback badges are invisible but failures remain visible', () => 
 });
 
 test('spectrum applies a fixed response curve, releases smoothly, and resets when playback stops', () => {
-  const page = ui();
+  const page = ui(false, true); page.receive(snapshot());
   vm.runInContext('reducedMotion.matches = false;', page.context);
   vm.runInContext("renderSpectrum({spotify:{status:'live',bands:Array(24).fill(80)}})", page.context);
   assert.ok(Math.abs(vm.runInContext("spectrumBars.spotify[0].level", page.context) - Math.pow(65 / 75, 1.25)) < .0001);
@@ -186,14 +188,13 @@ test('spectrum applies a fixed response curve, releases smoothly, and resets whe
 
 
 
-test('link is selected by default and remains open on Escape and tab changes', () => {
+test('queue composer remains visible independently of phone-link help and player tabs', () => {
   const page = ui(true); page.receive(snapshot());
   page.context.fetch = () => { throw new Error('No request until pairing is selected'); };
-  assert.equal(page.element('youtube-open-link')['aria-checked'], 'true');
   assert.equal(page.element('youtube-link-form').hidden, false);
-  assert.equal(page.element('youtube-pairing-pane').hidden, true);
+  assert.equal(page.element('youtube-pairing-pane').hidden, false);
   page.element('youtube-tab').click();
-  page.element('youtube-open-pairing').handlers.pointerenter[0]({pointerType:'mouse'});
+  page.element('youtube-pair').handlers.pointerenter[0]({pointerType:'mouse'});
   assert.equal(page.element('pairing-info-tip').hidden, false);
   page.key('Escape');
   assert.equal(page.element('pairing-info-tip').hidden, true);
@@ -204,34 +205,39 @@ test('link is selected by default and remains open on Escape and tab changes', (
   vm.runInContext("notice('Spotify feedback')", page.context);
   assert.equal(page.element('notice').textContent, 'Spotify feedback');
   page.element('youtube-tab').click();
-  assert.equal(page.element('youtube-open-link')['aria-checked'], 'true');
 });
 
-test('pairing radio requests once, keeps one pane open, and reuses its code', async () => {
+test('phone code reserves digit positions and only fetches on request, with bounded refresh', async () => {
   const page = ui(true); page.receive(snapshot());
   let finish, requests = 0;
   page.context.AbortSignal = {timeout: () => undefined};
   page.context.fetch = () => { requests++; return new Promise(resolve => { finish = resolve; }); };
-  const pending = page.element('youtube-open-pairing').handlers.click[0]();
+  const button = page.element('youtube-pair');
+  assert.equal(page.element('pairing-code').textContent, '··· ··· ··· ···');
+  assert.equal(page.element('pairing-status').textContent.includes('expired'), false);
+  assert.equal(requests, 0);
+  const pending = button.handlers.click[0]();
   assert.equal(requests, 1);
-  assert.equal(page.element('youtube-open-link')['aria-checked'], 'false');
-  assert.equal(page.element('youtube-open-pairing')['aria-checked'], 'true');
-  assert.equal(page.element('pairing-placeholder').hidden, false);
-  await page.element('youtube-open-pairing').handlers.click[0]();
+  assert.equal(page.element('pairing-result')['aria-busy'], 'true');
+  assert.equal(page.element('pairing-code').textContent, '··· ··· ··· ···');
+  await button.handlers.click[0]();
   assert.equal(requests, 1);
-  page.element('youtube-open-link').handlers.click[0]();
   finish({ok: true, json: async () => ({code: '123456789012'})});
   await pending;
-  assert.equal(page.element('youtube-link-form').hidden, false);
-  assert.equal(page.element('youtube-pairing-pane').hidden, true);
-  await page.element('youtube-open-pairing').handlers.click[0]();
-  assert.equal(requests, 1);
   assert.equal(page.element('pairing-code').textContent, '123 456 789 012');
-  assert.equal(page.element('pairing-placeholder').hidden, true);
-  assert.equal(page.element('youtube-pair').hidden, true);
-  vm.runInContext('hidePairing()', page.context);
-  assert.equal(page.element('pairing-code').textContent, '');
+  assert.equal(page.element('pairing-result')['aria-busy'], 'false');
+  assert.equal(button.hidden, false);
+  await button.handlers.click[0]();
   assert.equal(requests, 1);
+  vm.runInContext('pairingRetryAt = 0', page.context);
+  const refreshed = button.handlers.click[0]();
+  assert.equal(requests, 2);
+  finish({ok: true, json: async () => ({code: '987654321000'})});
+  await refreshed;
+  assert.equal(page.element('pairing-code').textContent, '987 654 321 000');
+  vm.runInContext('hidePairing()', page.context);
+  assert.equal(page.element('pairing-code').textContent, '··· ··· ··· ···');
+  assert.equal(page.element('youtube-link-form').hidden, false);
 });
 
 test('pairing failure offers a bounded retry; info focus never requests a code', async () => {
@@ -239,10 +245,10 @@ test('pairing failure offers a bounded retry; info focus never requests a code',
   page.context.AbortSignal = {timeout: () => undefined};
   let requests = 0;
   page.context.fetch = async () => { requests++; return {ok:false,json:async()=>({error:'Receiver unavailable'})}; };
-  page.element('youtube-open-pairing').handlers.focus[0]();
+  page.element('youtube-pair').handlers.focus[0]();
   assert.equal(requests, 0);
-  await page.element('youtube-open-pairing').handlers.click[0]();
-  assert.equal(page.element('pairing-placeholder').hidden, true);
+  await page.element('youtube-pair').handlers.click[0]();
+  assert.equal(page.element('pairing-code').textContent, '··· ··· ··· ···');
   assert.equal(page.element('pairing-status').textContent, 'Receiver unavailable');
   assert.equal(page.element('youtube-pair').hidden, false);
   assert.equal(page.element('youtube-pair').disabled, true);
@@ -322,20 +328,19 @@ test('volume shortcuts target the selected player or master and respect limits a
   assert.equal(requests().length, count);
 });
 
-test('YouTube form distinguishes Play from Enqueue and renders queue controls', async () => {
+test('YouTube composer only enqueues, including Enter submission, and enforces capacity', async () => {
   const page = ui(true), state = snapshot();
   const youtube = state.players.find(p => p.id === 'youtube');
   youtube.capabilities.push('enqueue', 'autoplay', 'clearqueue');
   youtube.queue_count = 2; youtube.autoplay = true;
   page.receive(state);
   vm.runInContext('var requests = []; change = async (path, payload) => { requests.push(payload); return true; };', page.context);
-  assert.equal(page.element('youtube-queue-count').textContent, 'Queue · 2');
   assert.equal(page.element('youtube-autoplay')['aria-checked'], 'true');
   const form = page.element('youtube-link-form');
-  for (const action of ['load', 'enqueue']) {
+  for (const action of [undefined, 'enqueue']) {
     page.element('youtube-url').value = 'https://youtu.be/abcdefghijk';
     await form.handlers.submit[0]({preventDefault() {}, submitter: {value: action}});
-    assert.equal(vm.runInContext('requests.at(-1).action', page.context), action);
+    assert.equal(vm.runInContext('requests.at(-1).action', page.context), 'enqueue');
     assert.equal(page.element('youtube-url').value, '');
   }
   page.element('youtube-autoplay').click();
@@ -362,8 +367,10 @@ test('shared Up next prioritizes queued videos without mixing recommendations in
   const list = page.element('youtube-queue-list'), row = list.children[0];
   assert.equal(list.children.length, 1);
   assert.equal(page.element('youtube-up-next-title').textContent, '<strong>Real title</strong>');
-  assert.equal(page.element('youtube-up-next-detail').textContent, 'From your queue');
-  assert.equal(row.children[1].children[0].textContent, '<strong>Real title</strong>');
+  assert.equal(page.element('youtube-up-next-detail').textContent, 'Next · From your queue');
+  assert.equal(page.element('youtube-recommendation-row').hidden, true);
+  assert.equal(row.children[1].children[1].children[1].textContent, 'Next');
+  assert.equal(row.children[1].children[1].children[0].textContent, '<strong>Real title</strong>');
   page.receive(state); assert.equal(list.children[0], row);
   vm.runInContext('var requests = []; change = async (path, payload) => { requests.push(payload); return true; };', page.context);
   row.children[2].click();
@@ -371,8 +378,9 @@ test('shared Up next prioritizes queued videos without mixing recommendations in
   youtube.queue = []; youtube.queue_count = 0; page.receive(state);
   assert.equal(list.children.length, 0);
   assert.equal(page.element('youtube-up-next-title').textContent, 'Recommended next');
-  assert.equal(page.element('youtube-up-next-detail').textContent, 'YouTube recommendation');
-  assert.equal(page.element('youtube-queue-empty').hidden, false);
+  assert.equal(page.element('youtube-up-next-detail').textContent, 'Next · YouTube recommendation');
+  assert.equal(page.element('youtube-recommendation-row').hidden, false);
+  assert.equal(page.element('youtube-queue-empty').hidden, true);
   youtube.autoplay = false; page.receive(state);
   assert.equal(list.children.length, 0);
   assert.equal(page.element('youtube-up-next-title').textContent, 'Nothing queued');
@@ -392,7 +400,7 @@ test('Spotify Up next updates metadata and clears old artwork when the next trac
   spotify.next_track = {title: 'Another track', artist: 'Another artist', artwork_url: 'https://i.scdn.co/image/next'};
   page.receive(state);
   assert.equal(page.element('spotify-up-next-title').textContent, 'Another track');
-  assert.equal(page.element('spotify-up-next-detail').textContent, 'Another artist');
+  assert.equal(page.element('spotify-up-next-detail').textContent, 'Next · Another artist');
   const image = page.element('spotify-up-next-artwork');
   image.handlers.load[0]();
   assert.equal(image.hidden, false);
@@ -401,11 +409,12 @@ test('Spotify Up next updates metadata and clears old artwork when the next trac
   page.visibility(true); page.visibility(false);
   assert.equal(page.element('spotify-up-next-title').textContent, 'Another track');
   spotify.next_track = null; page.receive(state);
-  assert.equal(page.element('spotify-up-next-title').textContent, 'Next item not available yet');
+  assert.equal(page.element('spotify-up-next-title').textContent, 'Nothing up next');
   assert.equal(page.element('spotify-up-next-detail').textContent, '');
   assert.equal(image.hidden, true);
   assert.equal(image.src, undefined);
 });
+
 
 test('YouTube navigation buttons and Shift-arrow shortcuts follow receiver capabilities', () => {
   const page = ui(true), state = snapshot(), youtube = state.players[1];
@@ -420,4 +429,329 @@ test('YouTube navigation buttons and Shift-arrow shortcuts follow receiver capab
   youtube.capabilities = []; page.receive(state);
   assert.equal(page.key('ArrowRight', {shiftKey: true}).defaultPrevented, undefined);
   assert.equal(page.element('youtube-previous').title, 'No previous video available yet');
+});
+
+test('cover connection cue is delayed, survives repeated errors, and clears on recovery', () => {
+  const page = ui(); page.receive(snapshot());
+  const cover = page.element('spotify-cover');
+  const image = page.element('spotify-artwork');
+  image.currentSrc = image.dataset.url; image.dispatchEvent({type: 'load'});
+  page.sources.at(-1).onerror();
+  assert.equal(cover.dataset.connecting, 'false');
+  page.receive(snapshot()); page.flushDelay(250);
+  assert.equal(cover.dataset.connecting, 'false', 'a short disconnect never shows the cue');
+  page.sources.at(-1).onerror(); page.sources.at(-1).onerror();
+  page.flushDelay(250);
+  assert.equal(cover.dataset.connecting, 'true');
+  assert.equal(page.element('spotify-spectrum').dataset.frozen, 'true');
+  assert.equal(page.element('spotify-track').textContent, 'Current title');
+  assert.equal(page.element('spotify-artwork').dataset.url, 'https://i.scdn.co/image/example');
+  page.receive(snapshot());
+  assert.equal(cover.dataset.connecting, 'false');
+  assert.equal(page.element('spotify-spectrum').dataset.frozen, 'false');
+  page.sources.at(-1).onerror(); page.visibility(true); page.flushDelay(250);
+  assert.equal(cover.dataset.connecting, 'false', 'hidden tabs do not animate');
+});
+
+test('disconnected spectrum retains its last levels until fresh state returns', () => {
+  const page = ui(false, true); page.receive(snapshot());
+  vm.runInContext("reducedMotion.matches = false; renderSpectrum({spotify:{status:'live',bands:Array(24).fill(80)}})", page.context);
+  const height = vm.runInContext('spectrumBars.spotify[0].fill.style.height', page.context);
+  page.sources.at(-1).onerror();
+  vm.runInContext('renderSpectrum()', page.context);
+  assert.equal(vm.runInContext('spectrumBars.spotify[0].fill.style.height', page.context), height);
+  page.receive(snapshot());
+  vm.runInContext('renderSpectrum()', page.context);
+  assert.equal(vm.runInContext('spectrumBars.spotify[0].level', page.context), 0);
+});
+
+test('empty covers animate immediately while artwork waits 250ms', () => {
+  const page = ui();
+  assert.equal(page.element('spotify-cover').dataset.connecting, 'true', 'initial empty cover starts immediately');
+  page.receive(snapshot());
+  const image = page.element('spotify-artwork');
+  image.currentSrc = image.dataset.url; image.dispatchEvent({type: 'load'});
+  page.sources.at(-1).onerror();
+  assert.equal(page.element('spotify-cover').dataset.connecting, 'false');
+  assert.equal(page.element('youtube-cover').dataset.connecting, 'true', 'unloaded artwork remains a placeholder');
+  page.flushDelay(250);
+  assert.equal(page.element('spotify-cover').dataset.connecting, 'true');
+  page.receive(snapshot());
+  image.dispatchEvent({type: 'error'});
+  page.sources.at(-1).onerror();
+  assert.equal(page.element('spotify-cover').dataset.connecting, 'true', 'failed artwork needs no overlay delay');
+});
+
+test('YouTube cover prefers high resolution and keeps its fallback across snapshots', () => {
+  const page = ui(), state = snapshot();
+  state.players[1].artwork_url = 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg';
+  page.receive(state);
+  const image = page.element('youtube-artwork');
+  assert.equal(image.src, 'https://i.ytimg.com/vi/abcdefghijk/maxresdefault.jpg');
+  image.currentSrc = image.src; image.dispatchEvent({type: 'error'});
+  assert.equal(image.src, 'https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg');
+  page.receive(state);
+  assert.equal(image.src, 'https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg');
+  image.currentSrc = image.src; image.naturalWidth = 320; image.dispatchEvent({type: 'load'});
+  assert.equal(image.hidden, false);
+  state.players[1].artwork_url = 'https://i.ytimg.com/vi/lmnopqrstuv/hqdefault.jpg';
+  page.receive(state);
+  assert.equal(image.src, 'https://i.ytimg.com/vi/lmnopqrstuv/maxresdefault.jpg');
+  image.currentSrc = image.src; image.naturalWidth = 120; image.dispatchEvent({type: 'load'});
+  assert.equal(image.src, 'https://i.ytimg.com/vi/lmnopqrstuv/mqdefault.jpg');
+  image.currentSrc = image.src; image.dispatchEvent({type: 'error'});
+  assert.equal(image.hidden, true);
+  assert.equal(image.dataset.fallback, '');
+});
+
+test('mobile cover controls move intact between overlay, short-screen fallback and desktop', () => {
+  const page = ui(true); page.receive(snapshot());
+  for (const [mobile, overlay, suffix] of [[true, true, '-cover'], [true, false, '-compact-playback-slot'], [false, false, '-cover'], [true, true, '-cover']]) {
+    vm.runInContext(`mobileArtworkLayout.matches = ${mobile}; coverPlaybackLayout.matches = ${overlay}; placePlaybackControls();`, page.context);
+    for (const id of ['spotify', 'youtube']) {
+      const destination = page.element(id + suffix), controls = page.element(id + '-playback-controls');
+      assert.equal(controls.parentNode, destination);
+      assert.equal(destination.children.filter(child => child === controls).length, 1);
+      assert.equal(page.element(id + '-seek').value, '60');
+      assert.equal(page.element(id + '-volume').value, 65);
+      assert.equal(page.element(id + '-mute').disabled, false);
+    }
+  }
+});
+
+test('visualizer defaults off without allocating bars or subscribing to spectrum', () => {
+  const page = ui();
+  assert.equal(page.element('spotify-spectrum').hidden, true);
+  assert.equal(page.element('youtube-spectrum').hidden, true);
+  assert.equal(vm.runInContext('spectrumBars.spotify.length', page.context), 0);
+  vm.runInContext('reducedMotion.matches = false; connect();', page.context);
+  assert.equal(page.sources.at(-1).url, 'api/events?spectrum=0');
+  const enabled = ui(false, true);
+  assert.equal(enabled.element('spotify-spectrum').hidden, false);
+  assert.equal(vm.runInContext('spectrumBars.spotify.length', enabled.context), 48);
+  vm.runInContext('reducedMotion.matches = false; connect();', enabled.context);
+  assert.equal(enabled.sources.at(-1).url, 'api/events');
+});
+
+test('combined upcoming section stays visible when queue controls are unavailable', () => {
+  const page = ui(), state = snapshot(); page.receive(state);
+  assert.equal(page.element('youtube-queue').hidden, false);
+  state.players[1].capabilities.push('enqueue'); page.receive(state);
+  assert.equal(page.element('youtube-queue').hidden, false);
+  state.players[1].capabilities = []; state.players[1].queue_count = 1; page.receive(state);
+  assert.equal(page.element('youtube-queue').hidden, false);
+});
+
+test('clicking a queue row plays its entry ID without a second remove request', () => {
+  const page = ui(true), state = snapshot();
+  const youtube = state.players[1]; youtube.capabilities.push('playqueue', 'removequeue');
+  youtube.queue = [{id: '00000000-0000-4000-8000-000000000001', video_id: 'abcdefghijk', title: 'First'}];
+  youtube.queue_count = 1; page.receive(state);
+  vm.runInContext('var requests = []; change = async (path, payload) => { requests.push(payload); return true; };', page.context);
+  const play = page.element('youtube-queue-list').children[0].children[1];
+  play.click();
+  assert.equal(vm.runInContext('requests.length', page.context), 1);
+  assert.equal(vm.runInContext('requests[0].action', page.context), 'playqueue');
+  assert.equal(vm.runInContext('requests[0].queue_id', page.context), youtube.queue[0].id);
+  youtube.queue[0].starting = true; page.receive(state); play.click();
+  assert.equal(vm.runInContext('requests.length', page.context), 1);
+  assert.equal(play['aria-busy'], 'true');
+});
+
+function reorderPage() {
+  const page = ui(true), state = snapshot(), youtube = state.players[1];
+  youtube.capabilities.push('reorderqueue', 'enqueue', 'playqueue');
+  youtube.queue = ['a','b','c'].map((title, index) => ({id: `00000000-0000-4000-8000-00000000000${index+1}`, video_id: title.repeat(11), title}));
+  youtube.queue_count = 3; page.receive(state);
+  vm.runInContext('var requests = []; change = async (path, payload) => { requests.push(payload); return true; };', page.context);
+  const list = page.element('youtube-queue-list'); list.scrollTop = 0;
+  list.getBoundingClientRect = () => ({top:0, bottom:128, height:128});
+  list.children.forEach((row,index) => { row.getBoundingClientRect = () => ({top:index*64-list.scrollTop, height:64}); });
+  return {page,state,list,requests:()=>JSON.parse(vm.runInContext('JSON.stringify(requests)',page.context))};
+}
+test('reorder handle arrows move by stable ID and never invoke play or volume', async () => {
+  const {page,state,list,requests} = reorderPage();
+  const handle = list.children[1].children[0]; let prevented = 0, stopped = 0;
+  await handle.handlers.keydown[0]({key:'ArrowUp',preventDefault(){prevented++;},stopPropagation(){stopped++;}});
+  assert.equal(prevented,1); assert.equal(stopped,1);
+  assert.deepEqual(requests(),[{player:'youtube',action:'reorderqueue',queue_id:state.players[1].queue[1].id,before_id:state.players[1].queue[0].id}]);
+  page.flushDelay(3000); // Receiver did not acknowledge the move; allow retry.
+  await handle.handlers.keydown[0]({key:'ArrowDown',preventDefault(){},stopPropagation(){}});
+  assert.equal(requests()[1].before_id,'');
+  state.players[1].capabilities=[];page.receive(state);
+  await handle.handlers.keydown[0]({key:'ArrowUp',preventDefault(){},stopPropagation(){}});
+  assert.equal(requests().length,2);
+});
+test('mouse and touch reorder commit only after dragging and drop, with cancellation on concurrent updates', async () => {
+  for (const pointerType of ['mouse','touch']) {
+    const {page,state,list,requests} = reorderPage();
+    const handle = list.children[2].children[0];
+    const event = y => ({pointerType,pointerId:1,button:0,clientY:y,preventDefault(){}});
+    handle.handlers.pointerdown[0](event(150));
+    handle.handlers.pointermove[0](event(148));
+    assert.equal(requests().length,0);
+    handle.handlers.pointermove[0](event(20));
+    assert.equal(list.children[0].style.transform,'translateY(64px)');
+    assert.equal(list.children[1].style.transform,'translateY(64px)');
+    assert.equal(list.children[2].dataset.next,'true');
+    assert.equal(list.children[0].dataset.next,'false');
+    assert.equal(requests().length,0);
+    await handle.handlers.pointerup[0](event(20));
+    assert.equal(requests().length,1);
+    assert.equal(requests()[0].queue_id,state.players[1].queue[2].id);
+    assert.equal(requests()[0].before_id,state.players[1].queue[0].id);
+    assert.equal(list.children[0].children[1].children[1].children[0].textContent,'c');
+    page.flushDelay(3000);
+    handle.handlers.pointerdown[0](event(150));handle.handlers.pointermove[0](event(20));
+    state.players[1].queue.shift();state.players[1].queue_count=2;page.receive(state);
+    await handle.handlers.pointerup[0](event(20));
+    assert.equal(requests().length,1);
+    assert.equal(handle.capture,null);
+  }
+});
+test('dragging near list edge scrolls; pointer cancellation never sends a move', () => {
+  const {list,requests}=reorderPage(),handle=list.children[0].children[0];
+  handle.handlers.pointerdown[0]({pointerId:1,button:0,clientY:20,preventDefault(){}});
+  handle.handlers.pointermove[0]({pointerId:1,clientY:150});
+  assert.ok(list.scrollTop>0);
+  handle.handlers.pointercancel[0]();
+  handle.handlers.pointerup[0]({pointerId:1,clientY:150});
+  assert.equal(requests().length,0);
+});
+
+
+test('queue drag preview reverses and cancellation restores order without playing', () => {
+  const {page,list,requests} = reorderPage(), handle = list.children[2].children[0];
+  const event = y => ({pointerId:1,button:0,clientY:y,preventDefault(){}});
+  handle.handlers.pointerdown[0](event(150));
+  handle.handlers.pointermove[0](event(20));
+  assert.equal(list.children[0].style.transform,'translateY(64px)');
+  handle.handlers.pointermove[0](event(85));
+  vm.runInContext('previewQueueDrop(false)',page.context);
+  assert.equal(list.children[0].style.transform,'translateY(0px)');
+  assert.equal(list.children[1].style.transform,'translateY(64px)');
+  assert.equal(list.children[0].dataset.next,'true');
+  handle.handlers.pointercancel[0]();
+  assert.ok(list.children.every(row => row.style.transform === ''));
+  assert.equal(list.children[0].children[1].children[1].children[1].textContent,'Next');
+  assert.equal(requests().length,0);
+});
+
+test('drop projection persists until acknowledgement and rolls back on failure', async () => {
+  const {page,state,list} = reorderPage();
+  const ids = state.players[1].queue.map(entry => entry.id);
+  await vm.runInContext(`moveQueueEntry('${ids[2]}','${ids[0]}')`,page.context);
+  assert.equal(list.children[0].children[1].children[1].children[0].textContent,'c');
+  page.receive(state); // A stale snapshot must not undo the projected move.
+  assert.equal(list.children[0].children[1].children[1].children[0].textContent,'c');
+  state.players[1].queue.unshift(state.players[1].queue.pop()); page.receive(state);
+  assert.equal(list.children[0].children[0].disabled,false);
+  vm.runInContext('change = async () => false',page.context);
+  await vm.runInContext(`moveQueueEntry('${ids[2]}','')`,page.context);
+  assert.equal(list.children[0].children[1].children[1].children[0].textContent,'c');
+  assert.equal(list.children[0].children[1].children.length,2); // Artwork and text only, no trailing play icon.
+});
+
+test('YouTube feedback expires after success but keeps errors visible', () => {
+  const page = ui(true); page.receive(snapshot());
+  vm.runInContext("selectPlayer('youtube'); notice('Added to queue')",page.context);
+  assert.equal(page.element('youtube-action-feedback').hidden,false);
+  page.flushDelay(4000);
+  assert.equal(page.element('youtube-action-feedback').hidden,true);
+  vm.runInContext("notice('Added to queue'); notice('Could not add video',true)",page.context);
+  page.flushDelay(4000);
+  assert.equal(page.element('youtube-action-feedback').hidden,false);
+  assert.equal(page.element('youtube-action-feedback').textContent,'Could not add video');
+});
+
+test('YouTube Autoplay remains available in settings while Spotify is selected', () => {
+  const page = ui(true), state = snapshot(), youtube = state.players[1];
+  youtube.capabilities.push('autoplay'); youtube.autoplay = false;
+  page.receive(state);
+  page.element('settings-drawer').showModal();
+  assert.equal(page.element('spotify-panel').hidden,false);
+  assert.equal(page.element('youtube-autoplay').disabled,false);
+  vm.runInContext('var requests = []; change = async (path,payload) => { requests.push(payload); return true; }',page.context);
+  page.element('youtube-autoplay').click();
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(requests[0])',page.context)),{player:'youtube',action:'autoplay',enabled:true});
+  youtube.autoplay = true; page.receive(state);
+  assert.equal(page.element('youtube-autoplay')['aria-checked'],'true');
+  youtube.capabilities = []; page.receive(state);
+  assert.equal(page.element('youtube-autoplay').disabled,true);
+  page.element('youtube-autoplay').click();
+  assert.equal(vm.runInContext('requests.length',page.context),1);
+});
+
+test('settings errors appear inside the drawer instead of behind it', () => {
+  const page = ui(true); page.receive(snapshot());
+  vm.runInContext("selectPlayer('youtube')",page.context);
+  page.element('settings-drawer').showModal();
+  vm.runInContext("notice('Could not update Autoplay',true)",page.context);
+  assert.equal(page.element('settings-feedback').hidden,false);
+  assert.equal(page.element('settings-feedback').textContent,'Could not update Autoplay');
+  assert.equal(page.element('youtube-action-feedback').textContent,'');
+  page.flushDelay(4000);
+  assert.equal(page.element('settings-feedback').hidden,false);
+});
+
+test('initial HTML puts controls on the cover and keeps Checking hidden before scripts run', () => {
+  const html = fs.readFileSync(path.join(process.env.PANEL_WEB_DIR || path.join(__dirname, '../apps/control-panel/web'), 'index.html'), 'utf8');
+  const stack = [], parents = new Map(), attrs = new Map();
+  const voidTags = new Set(['meta','link','input','img','br','hr','use','path','circle','line','polygon']);
+  // Inspect the shipped markup, rather than the DOM after layout relocation.
+  for (const match of html.matchAll(/<(\/?)([a-z][\w-]*)\b([^>]*?)(\/?)>/gi)) {
+    const [,closing,tag,attributes,selfClosing] = match;
+    if (closing) { if (stack.at(-1)?.tag === tag) stack.pop(); continue; }
+    const id = attributes.match(/\bid="([^"]+)"/)?.[1];
+    if (id) { parents.set(id,stack.map(entry => entry.id).filter(Boolean)); attrs.set(id,attributes); }
+    if (!selfClosing && !voidTags.has(tag)) stack.push({tag,id});
+  }
+  for (const id of ['spotify','youtube']) {
+    assert.ok(parents.get(id+'-playback-controls').includes(id+'-cover'));
+    assert.ok(!parents.get(id+'-playback-controls').includes(id+'-up-next'));
+    assert.match(attrs.get(id+'-status'),/\bhidden\b/);
+  }
+});
+
+test('Spotify next-track row invokes Next and disables when the preview or capability is unavailable', () => {
+  const page = ui(true), state = snapshot(), spotify = state.players[0];
+  spotify.capabilities.push('next'); spotify.next_track = {title:'Next song',artist:'Artist'};
+  page.receive(state);
+  vm.runInContext('var requests = []; change = async (path,payload) => { requests.push(payload); return true; }',page.context);
+  const row = page.element('spotify-up-next-play');
+  assert.equal(row.disabled,false); row.click();
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(requests[0])',page.context)),{player:'spotify',action:'next'});
+  spotify.next_track = null; page.receive(state); assert.equal(row.disabled,true); row.click();
+  spotify.next_track = {title:'Next song'}; spotify.capabilities = []; page.receive(state);
+  assert.equal(row.disabled,true); row.click();
+  spotify.capabilities = ['next']; page.receive(state); page.sources.at(-1).onerror();
+  assert.equal(row.disabled,true); row.click();
+  assert.equal(vm.runInContext('requests.length',page.context),1);
+});
+
+test('both players reuse empty-slot decorations and YouTube advances them after occupied rows', () => {
+  const page = ui(true), state = snapshot(), youtube = state.players[1];
+  page.receive(state);
+  const spotifySlots = page.element('spotify-empty-slots'), youtubeSlots = page.element('youtube-empty-slots');
+  assert.equal(spotifySlots.children.length,6);
+  assert.equal(youtubeSlots.children.length,6);
+  assert.equal(spotifySlots.children[0].innerHTML,youtubeSlots.children[0].innerHTML);
+  assert.match(spotifySlots.children[0].innerHTML,/Empty slot/);
+  const first = youtubeSlots.children[0];
+  youtube.queue = ['a','b'].map((title,index)=>({id:String(index),title,video_id:title.repeat(11)}));
+  page.receive(state);
+  assert.equal(youtubeSlots.style.top,'calc(var(--queue-row-height) * 2)');
+  assert.equal(youtubeSlots.children[0],first);
+  youtube.queue = []; youtube.autoplay = true; youtube.recommendation = {title:'Recommended',video_id:'ccccccccccc'};
+  page.receive(state);
+  assert.equal(youtubeSlots.style.top,'calc(var(--queue-row-height) * 1)');
+});
+
+test('queue removal and clearing do not request inline success messages', () => {
+  const {page,state,list} = reorderPage();
+  state.players[1].capabilities.push('removequeue','clearqueue'); page.receive(state);
+  vm.runInContext('var messages = []; change = async (path,payload,message) => { messages.push(message); return true; }',page.context);
+  list.children[0].children[2].click(); page.element('youtube-clearqueue').click();
+  assert.equal(vm.runInContext('messages.length',page.context),2);
+  assert.equal(vm.runInContext('messages.every(message => message === undefined)',page.context),true);
 });

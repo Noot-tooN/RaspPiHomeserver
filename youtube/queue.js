@@ -62,7 +62,7 @@
     const id = videoID(p), status = p.getPlayerState();
     if (pending) {
       if (id === pending.id && [1, 2, 3].includes(status)) {
-        if (pending.entryID && state.items[0]?.id === pending.entryID) state.items.shift();
+        if (pending.entryID) state.items = state.items.filter(item => item.id !== pending.entryID);
         // History changes only once the destination is confirmed, just like the queue.
         if (pending.previous) {
           if (state.history.at(-1) === pending.id) state.history.pop();
@@ -149,6 +149,25 @@
       if (!pending) state.currentID = videoID(p);
       save();
       if (!pending && (!validID(videoID(p)) || p.getPlayerState() === 0)) start(p, state.items[0].video_id, state.items[0].id);
+    },
+    move(entryID, beforeID) {
+      if (pending) throw new Error('Wait for the starting video before reordering');
+      const index = state.items.findIndex(item => item.id === entryID);
+      if (index < 0 || typeof beforeID !== 'string' || beforeID === entryID || (beforeID && !state.items.some(item => item.id === beforeID))) {
+        throw new Error('Queue changed. Try reordering again');
+      }
+      const [entry] = state.items.splice(index, 1);
+      const destination = beforeID ? state.items.findIndex(item => item.id === beforeID) : state.items.length;
+      state.items.splice(destination, 0, entry);
+      generation++;
+      error = '';
+      save();
+    },
+    playEntry(entryID) {
+      const entry = state.items.find(item => item.id === entryID);
+      if (!entry) throw new Error('Queue entry no longer exists');
+      if (!ready(player()) || pending) throw new Error('Player is not ready to start another video');
+      start(player(), entry.video_id, entry.id);
     },
     next() {
       const p = player();

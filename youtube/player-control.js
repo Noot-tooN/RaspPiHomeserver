@@ -20,6 +20,8 @@ function controlYouTube(input) {
   const capabilities = [];
   if (queue && typeof player.loadVideoById === 'function') {
     capabilities.push('enqueue', 'autoplay', 'clearqueue', 'removequeue');
+    if (!queueState.navigation_pending && queueState.queue_count > 0) capabilities.push('playqueue');
+    if (!queueState.navigation_pending && queueState.queue_count > 1) capabilities.push('reorderqueue');
     if (queueState.can_next) capabilities.push('next');
     if (queueState.can_previous) capabilities.push('previous');
   }
@@ -46,6 +48,10 @@ function controlYouTube(input) {
       else player.loadVideoById({videoId: input.videoId, startSeconds: 0});
     } else if (input.action === 'autoplay') {
       queue.setAutoplay(input.enabled);
+    } else if (input.action === 'reorderqueue') {
+      queue.move(input.queueID, input.beforeID);
+    } else if (input.action === 'playqueue') {
+      queue.playEntry(input.queueID);
     } else if (input.action === 'removequeue') {
       queue.remove(input.queueID);
     } else if (input.action === 'clearqueue') {

@@ -211,3 +211,56 @@ test('native playlist navigation remains a fallback, but is blocked while panel 
   assert.throws(() => f.control({action: 'previous'}));
   assert.throws(() => f.control({action: 'next'}));
 });
+
+test('playing a selected queue row removes only that entry after confirmation', async () => {
+  const f = fixture(); f.q.setAutoplay(false);
+  f.q.enqueue(B, 'First'); f.q.enqueue(C, 'Selected'); f.q.enqueue(C, 'Duplicate video');
+  const entries = f.q.status().queue;
+  f.control({action: 'playqueue', queueID: entries[1].id});
+  assert.deepEqual(f.calls, [C]);
+  assert.equal(f.q.status().queue.length, 3);
+  assert.equal(f.q.status().queue[1].starting, true);
+  assert.throws(() => f.control({action: 'playqueue', queueID: entries[0].id}));
+  f.media(C); await f.tick();
+  assert.deepEqual(Array.from(f.q.status().queue, entry => entry.id), [entries[0].id, entries[2].id]);
+  assert.throws(() => f.q.playEntry(entries[1].id));
+  f.media(C, 0); await f.tick();
+  assert.deepEqual(f.calls, [C, B]);
+});
+
+test('failed selected-row playback leaves the queue intact and can be retried', async () => {
+  const f = fixture(); f.q.setAutoplay(false); f.q.enqueue(B); f.q.enqueue(C);
+  const entry = f.q.status().queue[1];
+  f.q.playEntry(entry.id); f.advance(21000); await f.tick();
+  assert.equal(f.q.status().queue_count, 2);
+  assert.equal(f.q.status().queue[1].starting, false);
+  assert.match(f.q.status().queue_error, /did not start/);
+  f.q.playEntry(entry.id); assert.deepEqual(f.calls, [C, C]);
+});
+
+
+test('reordering persists exact entry IDs, preserves duplicates and changes next playback', async () => {
+  const f=fixture(); f.q.enqueue(B); f.q.enqueue(C); f.q.enqueue(B);
+  const ids=Array.from(f.q.status().queue, entry=>entry.id);
+  assert.ok(f.control({action:'state'}).capabilities.includes('reorderqueue'));
+  f.control({action:'reorderqueue',queueID:ids[2],beforeID:ids[0]});
+  assert.deepEqual(Array.from(f.q.status().queue, entry=>entry.id),[ids[2],ids[0],ids[1]]);
+  f.control({action:'reorderqueue',queueID:ids[0],beforeID:''});
+  assert.deepEqual(Array.from(f.q.status().queue, entry=>entry.id),[ids[2],ids[1],ids[0]]);
+  const restored=fixture({storage:f.storage});
+  assert.deepEqual(Array.from(restored.q.status().queue, entry=>entry.id),[ids[2],ids[1],ids[0]]);
+  restored.q.next();assert.deepEqual(restored.calls,[B]);
+  assert.throws(()=>restored.q.move(ids[1],ids[0]),/starting/);
+  assert.ok(!restored.control({action:'state'}).capabilities.includes('reorderqueue'));
+  restored.media(B);await restored.tick();
+  assert.deepEqual(Array.from(restored.q.status().queue, entry=>entry.id),[ids[1],ids[0]]);
+});
+test('stale or invalid reorder destinations leave the entire queue intact', () => {
+  const f=fixture();f.q.enqueue(B);f.q.enqueue(C);
+  const ids=Array.from(f.q.status().queue, entry=>entry.id);
+  for(const [id,before] of [['gone',ids[0]],[ids[0],'gone'],[ids[0],null],[ids[0],ids[0]]]) {
+    assert.throws(()=>f.q.move(id,before),/Queue changed/);
+    assert.deepEqual(Array.from(f.q.status().queue, entry=>entry.id),ids);
+  }
+  assert.deepEqual(f.calls,[]);
+});
