@@ -204,7 +204,7 @@ function renderUpNext(id, player, available) {
     artist: queued ? (queued.starting ? 'Starting…' : 'From your queue') : 'YouTube recommendation'
   } : null;
   const pending = !next && Boolean(id === 'youtube' && player?.autoplay_pending);
-  const title = next?.title || (!player ? 'Waiting for player…' : !player.available ? 'Player unavailable'
+  const title = next?.title || (!player ? '' : !player.available ? 'Player unavailable'
     : pending ? 'Finding a recommendation…' : 'Nothing up next');
   $(id + '-up-next').setAttribute('aria-busy', String(pending));
   $(id + '-up-next').dataset.empty = String(!next);
