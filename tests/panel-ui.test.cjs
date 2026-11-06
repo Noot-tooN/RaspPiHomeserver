@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // Run the real UI state handlers without a network, player, or audio device.
-function ui(shell = false, visualizer = false) {
+function ui(shell = false, visualizer = false, storage) {
   const elements = new Map(), listeners = {}, sources = [], timers = new Map();
   let timerID = 0;
   let now = 1000;
@@ -41,7 +41,7 @@ function ui(shell = false, visualizer = false) {
     addEventListener(name, fn) { this.handlers[name] = fn; }
     close() { this.closed = true; }
   }
-  const context = vm.createContext({document, Event, EventSource, URLSearchParams, Date: class extends Date { static now() { return now; } }, window: {location: {search: visualizer ? "?visualizer=1" : ""}, addEventListener() {}}, performance: {now: () => now},
+  const context = vm.createContext({document, Event, EventSource, localStorage: storage, URLSearchParams, Date: class extends Date { static now() { return now; } }, window: {location: {search: visualizer ? "?visualizer=1" : ""}, addEventListener() {}}, performance: {now: () => now},
     getComputedStyle: node => ({transform: node.pose || 'matrix(1, 0, 0, 1, 0, 0)'}),
     matchMedia: () => ({matches: true, addEventListener() {}}),
     requestAnimationFrame() { return 1; }, cancelAnimationFrame() {}, ResizeObserver: class { observe() {} }, setTimeout(fn, delay) { timers.set(++timerID, {fn, delay}); return timerID; }, clearTimeout(id) { timers.delete(id); }, setInterval() {}
@@ -976,4 +976,32 @@ test('freshness watchdog on return uses the age of the last background snapshot'
   assert.equal(page.element('volume').disabled,true);
   page.receive(snapshot());
   assert.equal(page.element('volume').disabled,false);
+});
+
+test('player tab preference survives refresh and follows mouse and keyboard selection', () => {
+  const values = new Map();
+  const storage = {getItem: key => values.get(key), setItem: (key, value) => values.set(key, value)};
+  const first = ui(true, false, storage);
+  first.element('youtube-tab').click();
+  const refreshed = ui(true, false, storage);
+  assert.equal(refreshed.element('youtube-tab')['aria-selected'], 'true');
+  assert.equal(refreshed.element('youtube-panel').hidden, false);
+  assert.equal(refreshed.element('spotify-panel').hidden, true);
+  refreshed.receive(snapshot());
+  assert.equal(refreshed.element('youtube-panel').hidden, false);
+  refreshed.element('youtube-tab').dispatchEvent({type: 'keydown', key: 'ArrowLeft', preventDefault() {}});
+  const again = ui(true, false, storage);
+  assert.equal(again.element('spotify-tab')['aria-selected'], 'true');
+});
+
+test('invalid or inaccessible tab storage defaults safely to Spotify', () => {
+  for (const storage of [
+    {getItem: () => 'invalid', setItem() {}},
+    {getItem() { throw new Error('Storage denied'); }, setItem() { throw new Error('Storage denied'); }}
+  ]) {
+    const page = ui(true, false, storage);
+    assert.equal(page.element('spotify-panel').hidden, false);
+    page.element('youtube-tab').click();
+    assert.equal(page.element('youtube-panel').hidden, false);
+  }
 });
