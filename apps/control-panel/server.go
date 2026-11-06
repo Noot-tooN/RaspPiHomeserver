@@ -289,7 +289,7 @@ func (p *panel) handler() http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' https://i.scdn.co https://i.ytimg.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 		// An exact authority allowlist also prevents DNS-rebinding attacks on
-		// a service whose authentication is provided by the Tailscale network.
+		// a service available to trusted LAN and Tailscale clients.
 		scheme, allowed := p.origins[strings.ToLower(r.Host)]
 		if !allowed {
 			fail(w, 403, "Host not allowed")

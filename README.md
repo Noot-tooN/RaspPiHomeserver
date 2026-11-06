@@ -14,7 +14,7 @@ This is a migration from an audited Raspberry Pi OS installation. Software build
 - SSH using the existing public key in `keys/pita.pub`; password login is disabled. `pita` has passwordless sudo for key-based administration. No password is embedded in the image.
 - Wi-Fi provisioning after flashing, or Ethernet DHCP. Credentials never enter Git or the Nix store.
 - Comin automatically follows `https://github.com/Noot-tooN/RaspPiHomeserver.git`, branch `master`, configuration `rasppi`.
-- A small Go control panel for DAC volume/mute and Spotify/YouTube service status and restart, accessible over Tailscale.
+- A small Go control panel for DAC volume/mute and Spotify/YouTube service status and restart, accessible over the local network and Tailscale.
 - Tailscale matches HomeServer's network-only setup: normal SSH keys, Tailscale SSH disabled, client routing support, and a trusted `tailscale0` interface. LAN SSH remains available for first boot and recovery.
 
 Mopidy/Iris, Xpra, a desktop login, and the separate standalone PulseAudio daemon are intentionally omitted. [Migration decisions](docs/migration.md) describe the differences from the old installation.
@@ -125,7 +125,7 @@ never recorded or streamed to the browser.
 
 After Tailscale enrollment, open **https://rasppi.tail0fa2e4.ts.net/** for the
 Homer dashboard, matching HomeServer. The Audio link opens **/audio/** for volume,
-Spotify, YouTube, and phone pairing. HTTP redirects to HTTPS; `/audio` redirects
+Spotify, YouTube, and phone pairing. The Tailscale hostname redirects HTTP to HTTPS; `/audio` redirects
 to `/audio/` so relative assets and API calls resolve correctly.
 
 Caddy obtains and renews the Pi's certificate through Tailscale. The tailnet must
@@ -133,11 +133,18 @@ have HTTPS Certificates enabled in its DNS settings, as for HomeServer.
 The dashboard defaults to dark mode and consists of static files served by
 Caddy. The audio backend listens only on `127.0.0.1:8090`; its port is no longer
 reachable from other devices. The firewall permits web access through the
-trusted Tailscale interface and keeps it closed on the LAN.
+trusted Tailscale interface and HTTP on the Pi's Wi-Fi (`wlan0`) and Ethernet
+(`end0`) interfaces.
 
-There is no separate panel password: tailnet access rules authorize access,
-and anyone allowed to reach the dashboard can control volume and restart the
-two services. The backend validates the exact public HTTPS origin; arbitrary
+On the same local network, open **http://rasppi.local/** for the dashboard or
+**http://rasppi.local/audio/** directly. This uses Avahi/mDNS and needs no
+Tailscale enrollment or local certificate installation. `http://rasppi/audio/`
+also works where the router resolves the Pi's hostname. LAN access uses HTTP;
+the existing Tailscale link continues to use HTTPS.
+
+There is no separate panel password: devices on the local network and clients
+allowed by tailnet access rules can control volume and restart the two services.
+The backend validates each explicitly configured public origin; arbitrary
 Host, Origin, and forwarding headers do not bypass those checks.
 
 - Choose the Spotify or YouTube tab to see its artwork and control playback.

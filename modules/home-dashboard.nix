@@ -1,4 +1,4 @@
-{ ... }:
+{ config, ... }:
 let
   host = "rasppi.tail0fa2e4.ts.net";
   origin = "https://${host}";
@@ -43,7 +43,7 @@ in
   };
   services.caddy = {
     enable = true;
-    # tailscale0 is trusted by the firewall; web access stays closed on the LAN.
+    # LAN HTTP is opened only on the physical interfaces in network.nix.
     openFirewall = false;
     virtualHosts = {
       "${origin}".extraConfig = ''
@@ -55,9 +55,9 @@ in
           }
         }
       '';
-      "http://rasppi".extraConfig = ''
-        redir ${origin}{uri} 308
-      '';
+      # Reuse Homer's generated document root and the audio proxy routes.
+      "http://rasppi.local".extraConfig = config.services.caddy.virtualHosts.${origin}.extraConfig;
+      "http://rasppi".extraConfig = config.services.caddy.virtualHosts.${origin}.extraConfig;
     };
   };
 }
