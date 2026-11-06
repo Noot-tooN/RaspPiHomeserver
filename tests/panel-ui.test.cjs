@@ -695,7 +695,7 @@ test('settings errors appear inside the drawer instead of behind it', () => {
 });
 
 test('initial HTML puts controls on the cover and keeps Checking hidden before scripts run', () => {
-  const html = fs.readFileSync(path.join(__dirname,'../apps/control-panel/web/index.html'),'utf8');
+  const html = fs.readFileSync(path.join(process.env.PANEL_WEB_DIR || path.join(__dirname, '../apps/control-panel/web'), 'index.html'), 'utf8');
   const stack = [], parents = new Map(), attrs = new Map();
   const voidTags = new Set(['meta','link','input','img','br','hr','use','path','circle','line','polygon']);
   // Inspect the shipped markup, rather than the DOM after layout relocation.
