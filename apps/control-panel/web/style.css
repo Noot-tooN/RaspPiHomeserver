@@ -162,10 +162,12 @@ button:focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible,.
 .cover-stage { --cover-size: min(100%,max(320px,calc(100svh - 168px))); display: grid; justify-items: center; gap: 20px; min-width: 0; }
 .artwork { width: var(--cover-size); aspect-ratio: 1; display: grid; place-items: center; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--page); color: var(--control-border); }
 .artwork-note { color: var(--control-border); position: absolute; inset: 0; margin: auto; z-index: 1; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 50%; pointer-events: none; transition: transform var(--ready-transition), opacity 250ms ease, background-color 250ms ease, color 250ms ease; }
-.artwork-note svg { width: 64px; height: 64px; transform-origin: center; }
+.artwork-note svg { width: 64px; height: 64px; transform-origin: center; stroke: var(--control-border); }
 .artwork:not([data-connecting=true]):has(img:not([hidden])) .artwork-note { opacity: 0; }
 .artwork[data-connecting=true] .artwork-note { opacity: 1; }
 .artwork:has(img:not([hidden])) .artwork-note { background: rgb(17 18 19 / 40%); backdrop-filter: blur(8px); color: #eee; }
+/* Set SVG paint directly so startup never depends on inherited text color. */
+.artwork:has(img:not([hidden])) .artwork-note svg { stroke: #eee; }
 .artwork img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #111213; }
 #youtube-artwork { object-fit: cover; }
 .player-console { container-type: inline-size; position: relative; min-width: 0; max-width: 600px; width: 100%; }
