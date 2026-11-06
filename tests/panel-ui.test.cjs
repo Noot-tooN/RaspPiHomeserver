@@ -47,6 +47,7 @@ function ui(shell = false, visualizer = false) {
     requestAnimationFrame() { return 1; }, cancelAnimationFrame() {}, ResizeObserver: class { observe() {} }, setTimeout(fn, delay) { timers.set(++timerID, {fn, delay}); return timerID; }, clearTimeout(id) { timers.delete(id); }, setInterval() {}
   });
   const web = process.env.PANEL_WEB_DIR || path.join(__dirname, '../apps/control-panel/web');
+  for (const id of ['spotify', 'youtube']) element(id + '-ready').hidden = true;
   for (const name of ['player-ui.js', 'app.js', ...(shell ? ['tabbed-ui.js'] : [])]) vm.runInContext(fs.readFileSync(path.join(web, name), 'utf8'), context);
   return {element, sources, context,
     flushDelay(delay) { for (const [id, timer] of [...timers]) if (timer.delay === delay) { timers.delete(id); timer.fn(); } },
@@ -761,7 +762,7 @@ test('initial HTML puts controls on the cover and keeps Checking hidden before s
     assert.match(attrs.get(id+'-status'),/\bhidden\b/);
     assert.match(attrs.get(id+'-track'),/class="track is-idle"/);
     assert.match(attrs.get(id+'-ready'),/aria-hidden="true"/);
-    assert.doesNotMatch(attrs.get(id+'-ready'),/\shidden(?:\s|$)/);
+    assert.match(attrs.get(id+'-ready'),/\shidden(?:\s|$)/);
   }
 });
 
@@ -841,6 +842,26 @@ function movingNotes() {
   for (const player of state.players) Object.assign(player, {active:false, title:'', artist:'', track_id:'', video_id:'', artwork_url:''});
   return {page, state, cover: page.element('spotify-cover'), note: page.element('spotify-note')};
 }
+test('a fresh page keeps ready text out of layout until connected idle handoff', () => {
+  const {page,state,note} = movingNotes();
+  const ready = page.element('spotify-ready');
+  assert.equal(ready.hidden,true);
+  page.sources.at(-1).onerror(); page.flushDelay(250);
+  assert.equal(ready.hidden,true);
+  page.receive(snapshot()); // Connected playback must not expose idle guidance.
+  assert.equal(ready.hidden,true);
+  note.animations.at(-1).finish();
+  page.sources.at(-1).onerror();
+  page.receive(state);
+  assert.equal(ready.hidden,true); // Wait for the existing connection turn too.
+  note.animations.at(-1).finish();
+  assert.equal(ready.hidden,false);
+  assert.equal(ready['aria-hidden'],'false');
+  // Subsequent disconnects retain the normal animated exit, not display:none.
+  page.sources.at(-1).onerror();
+  assert.equal(ready.hidden,false);
+  assert.equal(ready['aria-hidden'],'true');
+});
 test('connection to idle finishes the current turn before moving, without delaying controls', () => {
   for (const time of [10, 600, 1300, 1590, 3900]) {
     const {page,state,cover,note} = movingNotes();
