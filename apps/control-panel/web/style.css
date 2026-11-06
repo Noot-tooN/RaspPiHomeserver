@@ -161,7 +161,7 @@ button:focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible,.
 .player-stage { min-width: 0; display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); align-items: center; gap: clamp(40px,6vw,96px); padding: 40px 0; }
 .cover-stage { --cover-size: min(100%,max(320px,calc(100svh - 168px))); display: grid; justify-items: center; gap: 20px; min-width: 0; }
 .artwork { width: var(--cover-size); aspect-ratio: 1; display: grid; place-items: center; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--page); color: var(--control-border); }
-.artwork-note { position: absolute; inset: 0; margin: auto; z-index: 1; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 50%; pointer-events: none; transition: transform 320ms ease-in-out, opacity 250ms ease, background-color 250ms ease, color 250ms ease; }
+.artwork-note { position: absolute; inset: 0; margin: auto; z-index: 1; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 50%; pointer-events: none; transition: transform var(--ready-transition), opacity 250ms ease, background-color 250ms ease, color 250ms ease; }
 .artwork-note svg { width: 64px; height: 64px; transform-origin: center; }
 .artwork:not([data-connecting=true]):has(img:not([hidden])) .artwork-note { opacity: 0; }
 .artwork[data-connecting=true] .artwork-note { opacity: 1; }
@@ -570,13 +570,15 @@ dd { margin: 0; font-size: 13px; color: var(--secondary); }
 .queue-toolbar > button { flex: none; margin-left: auto; }
 
 /* Connected and waiting for input: calm motion, distinct from reconnection. */
-.artwork { --ready-controls-space: 160px; }
+.artwork { --ready-controls-space: 160px; --ready-transition: 320ms ease-in-out; }
 .artwork[data-note-idle=true] .artwork-note {
   transform: translateY(calc(var(--ready-controls-space) / -2 - 32px));
 }
 .artwork-ready {
   opacity: 0;
-  transition: opacity 320ms ease;
+  visibility: hidden;
+  transform: translateY(16px);
+  transition: opacity var(--ready-transition), transform var(--ready-transition), visibility 0s 320ms;
   position: absolute;
   z-index: 1;
   top: calc((100% - var(--ready-controls-space)) / 2 + 28px);
@@ -584,7 +586,19 @@ dd { margin: 0; font-size: 13px; color: var(--secondary); }
   right: 16px;
   text-align: center;
 }
-.artwork[data-note-idle=true] .artwork-ready { opacity: 1; }
+.artwork[data-note-idle=true] .artwork-ready {
+  opacity: 1; visibility: visible; transform: translateY(0); transition-delay: 0s;
+}
+/* The outgoing text includes its gradient; all three layers share the note's
+   handoff trigger and timing, without display:none cutting a fade short. */
+.artwork .track-info {
+  opacity: 1; visibility: visible; transform: translateY(0);
+  transition: opacity var(--ready-transition), transform var(--ready-transition), visibility 0s;
+}
+.artwork[data-note-idle=true] .track-info {
+  opacity: 0; visibility: hidden; transform: translateY(-16px);
+  transition-delay: 0s, 0s, 320ms; pointer-events: none;
+}
 .ready-title { color: var(--secondary); font-size: 18px; line-height: 26px; }
 .ready-instruction { margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 20px; }
 @media(max-width:760px) and (max-height:599px) { .artwork { --ready-controls-space: 0px; } }

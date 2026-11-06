@@ -39,6 +39,14 @@ root builds the package and runs its tests. `nix flake check` also includes it.
 
 ## Runtime
 
+The panel keeps its live state connection for two minutes after its browser tab
+is hidden. It stores incoming snapshots while pausing visual updates. Returning
+within that window reuses the connection if the last snapshot is under 16 seconds
+old; otherwise it reconnects with the existing content retained and a 750 ms
+delay before showing the connection animation. Background deadlines are checked
+against elapsed time as well as timers, which browsers may throttle. After the
+last client disconnects, the server stops polling player state.
+
 The NixOS module runs the panel as `pita`, with the existing user D-Bus and Pulse
 socket. It passes absolute paths to `pactl` and `systemctl`. The process accepts
 only the fixed Spotify and YouTube service IDs; commands never go through a
