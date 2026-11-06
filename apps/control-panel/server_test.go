@@ -17,12 +17,14 @@ import (
 )
 
 type fakeController struct {
-	queueTitles *youtubeTitleCache
-	mu          sync.Mutex
-	state       state
-	calls       int
-	reads       int
-	fail        bool
+	preview        bool
+	youtubeHistory []playerState
+	queueTitles    *youtubeTitleCache
+	mu             sync.Mutex
+	state          state
+	calls          int
+	reads          int
+	fail           bool
 }
 
 func fixtureController() *fakeController {
@@ -266,6 +268,21 @@ func (c *fakeController) Player(ctx context.Context, action playerAction) error 
 			p.Queue = append(p.Queue, queuedVideo{ID: fmt.Sprintf("00000000-0000-4000-8000-%012d", c.calls), VideoID: videoID, Title: queueTitle})
 			p.QueueCount = len(p.Queue)
 		}
+		if action.Action == "reorderqueue" && action.BeforeID != nil {
+			index := slices.IndexFunc(p.Queue, func(item queuedVideo) bool { return item.ID == action.QueueID })
+			destination := len(p.Queue)
+			if *action.BeforeID != "" {
+				destination = slices.IndexFunc(p.Queue, func(item queuedVideo) bool { return item.ID == *action.BeforeID })
+			}
+			if index >= 0 && destination >= 0 {
+				entry := p.Queue[index]
+				p.Queue = slices.Delete(p.Queue, index, index+1)
+				if destination > index {
+					destination--
+				}
+				p.Queue = slices.Insert(p.Queue, destination, entry)
+			}
+		}
 		if action.Action == "removequeue" {
 			p.Queue = slices.DeleteFunc(p.Queue, func(item queuedVideo) bool { return item.ID == action.QueueID })
 			p.QueueCount = len(p.Queue)
@@ -303,6 +320,9 @@ func (c *fakeController) Player(ctx context.Context, action playerAction) error 
 			} else {
 				p.Capabilities = append(p.Capabilities, "pause")
 			}
+		}
+		if c.preview && p.ID == "youtube" {
+			c.previewYouTubeNavigation(p, action)
 		}
 	}
 	return nil

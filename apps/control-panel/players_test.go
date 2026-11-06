@@ -172,6 +172,9 @@ func TestYouTubeQueueActions(t *testing.T) {
 		`{"player":"youtube","action":"autoplay","enabled":false}`,
 		`{"player":"youtube","action":"clearqueue"}`,
 		`{"player":"youtube","action":"removequeue","queue_id":"00000000-0000-4000-8000-000000000001"}`,
+		`{"player":"youtube","action":"playqueue","queue_id":"00000000-0000-4000-8000-000000000001"}`,
+		`{"player":"youtube","action":"reorderqueue","queue_id":"00000000-0000-4000-8000-000000000001","before_id":""}`,
+		`{"player":"youtube","action":"reorderqueue","queue_id":"00000000-0000-4000-8000-000000000001","before_id":"00000000-0000-4000-8000-000000000002"}`,
 	} {
 		if w := request(p, "/api/player", body); w.Code != 202 {
 			t.Fatalf("valid queue action rejected: %s: %d", body, w.Code)
@@ -189,6 +192,15 @@ func TestYouTubeQueueActions(t *testing.T) {
 		`{"player":"youtube","action":"clearqueue","enabled":false}`,
 		`{"player":"youtube","action":"play","enabled":true}`,
 		`{"player":"youtube","action":"removequeue","queue_id":"invalid"}`,
+		`{"player":"youtube","action":"playqueue","queue_id":"invalid"}`,
+		`{"player":"youtube","action":"reorderqueue","queue_id":"00000000-0000-4000-8000-000000000001"}`,
+		`{"player":"youtube","action":"reorderqueue","queue_id":"00000000-0000-4000-8000-000000000001","before_id":"invalid"}`,
+		`{"player":"youtube","action":"reorderqueue","queue_id":"00000000-0000-4000-8000-000000000001","before_id":"00000000-0000-4000-8000-000000000001"}`,
+		`{"player":"youtube","action":"reorderqueue","queue_id":"00000000-0000-4000-8000-000000000001","before_id":"","volume":20}`,
+		`{"player":"spotify","action":"reorderqueue","queue_id":"00000000-0000-4000-8000-000000000001","before_id":""}`,
+		`{"player":"youtube","action":"playqueue","queue_id":"00000000-0000-4000-8000-000000000001","before_id":""}`,
+		`{"player":"spotify","action":"playqueue","queue_id":"00000000-0000-4000-8000-000000000001"}`,
+		`{"player":"youtube","action":"playqueue","queue_id":"00000000-0000-4000-8000-000000000001","url":"https://youtu.be/dQw4w9WgXcQ"}`,
 		`{"player":"spotify","action":"removequeue","queue_id":"00000000-0000-4000-8000-000000000001"}`,
 		`{"player":"youtube","action":"clearqueue","queue_id":"00000000-0000-4000-8000-000000000001"}`,
 	} {

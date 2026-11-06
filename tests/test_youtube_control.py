@@ -78,9 +78,34 @@ class YouTubeQueueEntryTests(unittest.IsolatedAsyncioTestCase):
             await control('removequeue', None, '// script', queue_id=entry_id)
             payload = json.loads(evaluate.call_args.args[1].split('\ncontrolYouTube(', 1)[1][:-1])
             self.assertEqual(payload, {'action': 'removequeue', 'queueID': entry_id})
+            await control('playqueue', None, '// script', queue_id=entry_id)
+            payload = json.loads(evaluate.call_args.args[1].split('\ncontrolYouTube(', 1)[1][:-1])
+            self.assertEqual(payload, {'action': 'playqueue', 'queueID': entry_id})
             await control('enqueue', None, '// script', video_id='abcdefghijk', title='A "quoted" title')
             payload = json.loads(evaluate.call_args.args[1].split('\ncontrolYouTube(', 1)[1][:-1])
             self.assertEqual(payload['title'], 'A "quoted" title')
             for entry in [None, 'invalid', '00000000; echo secret']:
                 with self.assertRaises(ValueError):
                     await control('removequeue', None, '', queue_id=entry)
+                with self.assertRaises(ValueError):
+                    await control('playqueue', None, '', queue_id=entry)
+
+
+class YouTubeQueueReorderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_reordering_validates_and_passes_stable_ids(self):
+        page = {'url': 'https://www.youtube.com/tv', 'webSocketDebuggerUrl': 'ws://127.0.0.1:9222/devtools/page/receiver'}
+        evaluate = AsyncMock(return_value={'accepted': True})
+        entry = '00000000-0000-4000-8000-000000000001'
+        destination = '00000000-0000-4000-8000-000000000002'
+        with patch('youtube_control.get_tab', return_value=page), patch('youtube_control.websockets.connect', return_value=AsyncMock()), patch('youtube_control.evaluate', evaluate):
+            for before in [destination, '']:
+                await control('reorderqueue', None, '// script', queue_id=entry, before_id=before)
+                payload = json.loads(evaluate.call_args.args[1].split('\ncontrolYouTube(', 1)[1][:-1])
+                self.assertEqual(payload, {'action': 'reorderqueue', 'queueID': entry, 'beforeID': before})
+            calls = evaluate.call_count
+            for before in [None, entry, 'invalid', 42]:
+                with self.assertRaises(ValueError):
+                    await control('reorderqueue', None, '', queue_id=entry, before_id=before)
+            with self.assertRaises(ValueError):
+                await control('playqueue', None, '', queue_id=entry, before_id=destination)
+            self.assertEqual(evaluate.call_count, calls)
