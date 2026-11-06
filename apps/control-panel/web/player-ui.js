@@ -13,8 +13,15 @@ const connectionNoteFrames = [
   [.7125, 378], [.825, 355], [.9375, 360], [1, 360]
 ].map(([offset, angle]) => ({offset, transform: `rotate(${angle}deg)`, easing: 'ease-in-out'}));
 function setNoteIdle(id, idle) {
+  const ready = $(id + '-ready');
+  if (idle && ready.hidden) {
+    // On a new page this must not render at all until fresh state confirms
+    // idle. Establish the hidden CSS pose before the first shared handoff.
+    ready.hidden = false;
+    ready.getClientRects();
+  }
   $(id + '-cover').dataset.noteIdle = String(idle);
-  $(id + '-ready').setAttribute('aria-hidden', String(!idle));
+  ready.setAttribute('aria-hidden', String(!idle));
   const info = $(id + '-track-info');
   info.setAttribute('aria-hidden', String(idle));
   info.inert = idle;
