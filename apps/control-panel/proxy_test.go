@@ -21,13 +21,27 @@ func TestPublicOriginValidation(t *testing.T) {
 	}
 }
 
-func TestAudioBehindHTTPSProxy(t *testing.T) {
-	const host = "rasppi.tail0fa2e4.ts.net"
-	const origin = "https://" + host
+var audioOrigins = []string{"https://rasppi.tail0fa2e4.ts.net", "http://rasppi.local", "http://rasppi"}
+
+func TestAudioBehindProxy(t *testing.T) {
+	for _, origin := range audioOrigins {
+		t.Run(origin, func(t *testing.T) { testAudioBehindProxy(t, origin) })
+	}
+}
+
+func testAudioBehindProxy(t *testing.T, origin string) {
+	u, _ := url.Parse(origin)
+	host := u.Host
+	wrongScheme := "http"
+	if u.Scheme == "http" {
+		wrongScheme = "https"
+	}
 	c := fixtureController()
 	p := newPanel(c, nil)
-	if err := p.allowPublicOrigin(origin); err != nil {
-		t.Fatal(err)
+	for _, allowedOrigin := range audioOrigins {
+		if err := p.allowPublicOrigin(allowedOrigin); err != nil {
+			t.Fatal(err)
+		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -37,7 +51,7 @@ func TestAudioBehindHTTPSProxy(t *testing.T) {
 	target, _ := url.Parse(backend.URL)
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = -1
-	// Simulate Caddy terminating HTTPS, preserving Host/Origin and stripping
+	// Simulate Caddy preserving Host/Origin and stripping
 	// /audio before forwarding over loopback HTTP.
 	edge := httptest.NewServer(http.StripPrefix("/audio", proxy))
 	defer edge.Close()
@@ -61,13 +75,19 @@ func TestAudioBehindHTTPSProxy(t *testing.T) {
 			t.Fatal("API requests escape the mounted audio path")
 		}
 	}
+	otherOrigin := audioOrigins[0]
+	if origin == otherOrigin {
+		otherOrigin = audioOrigins[1]
+	}
 	for _, tt := range []struct {
 		host, origin string
 		status       int
 	}{
 		{host, origin, 202},
-		{host, "http://" + host, 403},
+		{host, wrongScheme + "://" + host, 403},
+		{host, "http://rasppi.other", 403},
 		{host, "https://evil.example", 403},
+		{host, otherOrigin, 403},
 		{"evil.example", origin, 403},
 	} {
 		req, _ := http.NewRequest("POST", edge.URL+"/audio/api/volume", strings.NewReader(`{"volume":45}`))

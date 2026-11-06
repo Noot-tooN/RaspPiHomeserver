@@ -7,6 +7,11 @@
     22
     24879
   ];
+  # Same interface-scoped LAN access as HomeServer. Do not expose the backend.
+  networking.firewall.interfaces = {
+    wlan0.allowedTCPPorts = [ 80 ];
+    end0.allowedTCPPorts = [ 80 ];
+  };
   services.avahi = {
     enable = true;
     nssmdns4 = true;
