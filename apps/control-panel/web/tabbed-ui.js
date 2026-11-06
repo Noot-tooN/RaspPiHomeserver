@@ -26,8 +26,6 @@ function renderShell() {
     for (const action of ['back', 'forward']) setControlDisabled($(id + '-' + action), !relativeSeekTarget(id, 0, true));
 
   }
-  const spotify = current?.players?.find(p => p.id === 'spotify');
-  document.querySelector('.spotify-handoff').hidden = Boolean(spotify?.active);
 }
 
 for (const id of playerIDs) {

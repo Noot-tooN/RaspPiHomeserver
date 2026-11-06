@@ -5,6 +5,84 @@ const seekDragging = new Map();
 const timelines = new Map();
 const titleAnimations = new Map();
 
+// Visual state is independent of connection/control availability. Repeated SSE
+// snapshots must not restart a loop or a handoff already in progress.
+const noteMotions = new Map();
+const connectionNoteFrames = [
+  [0, 0], [.0875, -12], [.175, 10], [.2625, -8],
+  [.7125, 378], [.825, 355], [.9375, 360], [1, 360]
+].map(([offset, angle]) => ({offset, transform: `rotate(${angle}deg)`, easing: 'ease-in-out'}));
+function renderNoteMotion(id) {
+  const cover = $(id + '-cover'), note = $(id + '-note');
+  const still = reducedMotion.matches || document.hidden;
+  const target = cover.dataset.connecting === 'true' ? 'connecting' : cover.dataset.ready === 'true' ? 'idle' : 'rest';
+  let motion = noteMotions.get(id);
+  if (motion?.target === target && motion.still === still) return;
+  if (!motion) { motion = {animation: null, phase: 'rest', version: 0}; noteMotions.set(id, motion); }
+  motion.target = target;
+  motion.still = still;
+  const version = ++motion.version;
+  clearTimeout(motion.timer);
+  const cancel = () => {
+    if (motion.animation) { motion.animation.onfinish = null; motion.animation.cancel(); motion.animation = null; }
+  };
+  const animate = (frames, options, finish) => {
+    cancel();
+    motion.animation = note.animate(frames, {...options, fill: 'forwards'});
+    motion.animation.onfinish = () => { if (motion.version === version) finish?.(); };
+  };
+  const loop = () => {
+    if (target === 'connecting') {
+      motion.phase = 'connecting';
+      animate(connectionNoteFrames, {duration: 1600, iterations: Infinity});
+    } else if (target === 'idle') {
+      motion.phase = 'idle';
+      animate([
+        {transform: 'translateY(0) rotate(0deg)'},
+        {transform: 'translateY(-3px) rotate(3deg)'},
+        {transform: 'translateY(0) rotate(0deg)'},
+        {transform: 'translateY(2px) rotate(-3deg)'},
+        {transform: 'translateY(0) rotate(0deg)'}
+      ].map(frame => ({...frame, easing: 'ease-in-out'})), {duration: 3600, iterations: Infinity});
+    } else { motion.phase = 'rest'; cancel(); }
+  };
+  const enterIdle = () => {
+    cancel(); // A complete turn and identity are the same visible pose.
+    motion.phase = 'settling';
+    cover.dataset.noteIdle = 'true';
+    motion.timer = setTimeout(() => { if (motion.version === version) loop(); }, 320);
+  };
+  if (still) {
+    cancel();
+    motion.phase = target;
+    cover.dataset.noteIdle = String(target === 'idle');
+    return;
+  }
+  if (target === 'idle' && motion.phase === 'connecting' && motion.animation) {
+    // Finish only the current turn, including its overshoot and recovery.
+    const turns = Math.floor((motion.animation.currentTime || 0) / 1600) + 1;
+    motion.animation.effect.updateTiming({iterations: turns});
+    motion.animation.onfinish = () => { if (motion.version === version) enterIdle(); };
+    return;
+  }
+  if (target === 'connecting' && motion.phase === 'connecting' && motion.animation) {
+    // A reconnect during the pending last turn resumes that same animation.
+    motion.animation.effect.updateTiming({iterations: Infinity});
+    motion.animation.onfinish = null;
+    return;
+  }
+  cover.dataset.noteIdle = 'false';
+  if (motion.animation) {
+    // Interrupted idle/settling or arriving artwork: preserve the visible pose
+    // before cancelling, then ease upright rather than resetting the transform.
+    const pose = getComputedStyle(note).transform;
+    motion.phase = 'settling';
+    animate([{transform: pose}, {transform: 'translateY(0) rotate(0deg)'}],
+      {duration: 220, easing: 'ease-out'}, target === 'idle' ? enterIdle : loop);
+  } else if (target === 'idle') enterIdle();
+  else loop();
+}
+
 function setIconButton(button, icon, label) {
   if (button.dataset.icon !== icon) { button.innerHTML = playerIcons[icon]; button.dataset.icon = icon; }
   button.setAttribute('aria-label', label);
@@ -42,6 +120,10 @@ function titleMotion(id) {
 }
 function renderMedia(id, player, available) {
   const name = id === 'spotify' ? 'Spotify' : 'YouTube';
+  const ready = Boolean(available && !player?.active && !player?.title && !player?.track_id && !player?.video_id);
+  $(id + '-cover').dataset.ready = String(ready);
+  $(id + '-ready').hidden = !ready;
+  $(id + '-track-info').hidden = ready;
   const title = !player ? 'Waiting for player state…' : player?.title || (player?.active ? 'Title unavailable' : id === 'spotify' ? 'Choose RaspPi in Spotify' : 'Paste a link or cast from your phone');
   const track = $(id + '-track'), box = $(id + '-track-box');
   if (track.textContent !== title) track.textContent = title;
@@ -64,6 +146,7 @@ function renderMedia(id, player, available) {
     image.dataset.fallback = youtubeThumbnail ? url.replace('/hqdefault.jpg', '/mqdefault.jpg') : '';
     if (url) image.src = image.dataset.url; else image.removeAttribute('src');
   }
+  renderNoteMotion(id);
   titleMotion(id);
   const muted = Boolean(player?.muted);
   const mute = $(id + '-mute');

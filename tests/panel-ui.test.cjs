@@ -19,6 +19,15 @@ function ui(shell = false, visualizer = false) {
       getClientRects() { return [{}]; }, setPointerCapture(id) { this.capture = id; }, hasPointerCapture(id) { return this.capture === id; }, releasePointerCapture() { this.capture = null; }, append(...children) { for (const child of children) this.insertBefore(child, null); },
       insertBefore(child, before) { if (child.parentNode) child.remove(); const index = before ? this.children.indexOf(before) : this.children.length; this.children.splice(index, 0, child); child.parentNode = this; },
       remove() { if (this.parentNode) { const parent = this.parentNode; parent.children.splice(parent.children.indexOf(this), 1); this.parentNode = null; } }, addEventListener(name, fn) { (this.handlers[name] ||= []).push(fn); }, setAttribute(key, value) { this[key] = value; },
+      animations: [],
+      animate(frames, options) {
+        const animation = {frames, options: {...options}, currentTime: 0, cancelled: false,
+          cancel() { this.cancelled = true; }, pause() {},
+          finish() { this.onfinish?.(); }};
+        animation.effect = {updateTiming(timing) { Object.assign(animation.options, timing); }};
+        this.animations.push(animation);
+        return animation;
+      },
       removeAttribute(key) { delete this[key]; }, matches() { return false; }
     });
     return elements.get(id);
@@ -33,6 +42,7 @@ function ui(shell = false, visualizer = false) {
     close() { this.closed = true; }
   }
   const context = vm.createContext({document, Event, EventSource, URLSearchParams, window: {location: {search: visualizer ? "?visualizer=1" : ""}, addEventListener() {}}, performance: {now: () => now},
+    getComputedStyle: node => ({transform: node.pose || 'matrix(1, 0, 0, 1, 0, 0)'}),
     matchMedia: () => ({matches: true, addEventListener() {}}),
     requestAnimationFrame() { return 1; }, cancelAnimationFrame() {}, ResizeObserver: class { observe() {} }, setTimeout(fn, delay) { timers.set(++timerID, {fn, delay}); return timerID; }, clearTimeout(id) { timers.delete(id); }, setInterval() {}
   });
@@ -380,10 +390,11 @@ test('shared Up next prioritizes queued videos without mixing recommendations in
   assert.equal(page.element('youtube-up-next-title').textContent, 'Recommended next');
   assert.equal(page.element('youtube-up-next-detail').textContent, 'Next · YouTube recommendation');
   assert.equal(page.element('youtube-recommendation-row').hidden, false);
-  assert.equal(page.element('youtube-queue-empty').hidden, true);
   youtube.autoplay = false; page.receive(state);
   assert.equal(list.children.length, 0);
-  assert.equal(page.element('youtube-up-next-title').textContent, 'Nothing queued');
+  assert.equal(page.element('youtube-up-next-title').textContent, 'Nothing up next');
+  assert.equal(page.element('youtube-recommendation-row').hidden, false);
+  assert.equal(page.element('youtube-up-next-detail').textContent, '');
   assert.equal(page.element('youtube-up-next-artwork').hidden, true);
   youtube.autoplay = true; youtube.recommendation = null; youtube.autoplay_pending = true; page.receive(state);
   assert.equal(page.element('youtube-up-next')['aria-busy'], 'true');
@@ -754,4 +765,102 @@ test('queue removal and clearing do not request inline success messages', () => 
   list.children[0].children[2].click(); page.element('youtube-clearqueue').click();
   assert.equal(vm.runInContext('messages.length',page.context),2);
   assert.equal(vm.runInContext('messages.every(message => message === undefined)',page.context),true);
+});
+
+test('ready guidance appears only for connected, available players without loaded media', () => {
+  const page = ui(true), state = snapshot();
+  for (const player of state.players) Object.assign(player,{active:false,title:'',artist:'',track_id:'',video_id:'',artwork_url:''});
+  page.receive(state);
+  for (const id of ['spotify','youtube']) {
+    assert.equal(page.element(id+'-cover').dataset.ready,'true');
+    assert.equal(page.element(id+'-ready').hidden,false);
+    assert.equal(page.element(id+'-track-info').hidden,true);
+  }
+  page.sources.at(-1).onerror();
+  assert.equal(page.element('spotify-ready').hidden,true);
+  assert.equal(page.element('spotify-cover').dataset.ready,'false');
+  page.receive(state);
+  assert.equal(page.element('spotify-ready').hidden,false);
+  state.players[0].available=false; page.receive(state);
+  assert.equal(page.element('spotify-ready').hidden,true);
+  const paused = snapshot(); paused.players.forEach(player => {player.paused=true;}); page.receive(paused);
+  for (const id of ['spotify','youtube']) {
+    assert.equal(page.element(id+'-cover').dataset.ready,'false');
+    assert.equal(page.element(id+'-ready').hidden,true);
+    assert.equal(page.element(id+'-track-info').hidden,false);
+  }
+  paused.players[0].active=false; page.receive(paused);
+  assert.equal(page.element('spotify-cover').dataset.ready,'false');
+});
+
+function movingNotes() {
+  const page = ui();
+  vm.runInContext("reducedMotion.matches = false; connection(false);", page.context);
+  const state = snapshot();
+  for (const player of state.players) Object.assign(player, {active:false, title:'', artist:'', track_id:'', video_id:'', artwork_url:''});
+  return {page, state, cover: page.element('spotify-cover'), note: page.element('spotify-note')};
+}
+test('connection to idle finishes the current turn before moving, without delaying controls', () => {
+  for (const time of [10, 600, 1300, 1590, 3900]) {
+    const {page,state,cover,note} = movingNotes();
+    const spin = note.animations.at(-1); spin.currentTime = time;
+    page.receive(state);
+    assert.equal(page.element('volume').disabled,false);
+    assert.equal(cover.dataset.ready,'true');
+    assert.equal(cover.dataset.noteIdle,'false');
+    assert.equal(note.animations.at(-1),spin);
+    assert.equal(spin.options.iterations,Math.floor(time/1600)+1);
+    page.receive(state); // Repeated snapshots preserve the pending handoff.
+    assert.equal(note.animations.at(-1),spin);
+    spin.finish();
+    assert.equal(cover.dataset.noteIdle,'true');
+    assert.equal(spin.cancelled,true);
+    page.flushDelay(320);
+    const idle = note.animations.at(-1);
+    assert.equal(idle.options.duration,3600);
+    assert.equal(idle.frames[0].transform,idle.frames.at(-1).transform);
+  }
+});
+test('reconnect during the last turn resumes it, and stale completion cannot enter idle', () => {
+  const {page,state,cover,note} = movingNotes();
+  const spin = note.animations.at(-1); spin.currentTime=800;
+  page.receive(state); const staleFinish=spin.onfinish;
+  page.sources.at(-1).onerror();
+  assert.equal(note.animations.at(-1),spin);
+  assert.equal(spin.options.iterations,Infinity);
+  assert.equal(spin.currentTime,800);
+  staleFinish(); page.flushDelay(320);
+  assert.equal(cover.dataset.noteIdle,'false');
+});
+test('interruptions ease from the displayed note pose and cancel pending idle motion', () => {
+  const {page,state,cover,note} = movingNotes();
+  page.receive(state); note.animations.at(-1).finish(); page.flushDelay(320);
+  note.pose='matrix(0.99, 0.05, -0.05, 0.99, 0, -2)';
+  page.sources.at(-1).onerror();
+  const bridge=note.animations.at(-1);
+  assert.equal(bridge.frames[0].transform,note.pose);
+  assert.equal(bridge.options.duration,220);
+  bridge.finish();
+  assert.equal(note.animations.at(-1).options.duration,1600);
+  page.receive(state); note.animations.at(-1).finish();
+  assert.equal(cover.dataset.noteIdle,'true');
+  page.receive(snapshot()); page.flushDelay(320);
+  assert.equal(cover.dataset.noteIdle,'false');
+  assert.equal(vm.runInContext("noteMotions.get('spotify').phase",page.context),'rest');
+});
+test('track arrival during rotation settles from its current pose; reduced motion and hidden tabs stop loops', () => {
+  const {page,note,cover} = movingNotes();
+  note.pose='matrix(0, 1, -1, 0, 0, 0)';
+  page.receive(snapshot());
+  assert.equal(note.animations.at(-1).frames[0].transform,note.pose);
+  note.animations.at(-1).finish();
+  assert.equal(vm.runInContext("noteMotions.get('spotify').animation",page.context),null);
+  page.sources.at(-1).onerror(); page.flushDelay(250);
+  const spin=note.animations.at(-1);
+  page.visibility(true);
+  assert.equal(spin.cancelled,true);
+  page.visibility(false);
+  vm.runInContext("reducedMotion.matches=true; renderNoteMotion('spotify');",page.context);
+  assert.equal(note.animations.at(-1).cancelled,true);
+  assert.equal(cover.dataset.noteIdle,'false');
 });

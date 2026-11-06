@@ -153,7 +153,7 @@ func TestPreview(t *testing.T) {
 	})
 	mux.HandleFunc("POST /__test/idle", func(w http.ResponseWriter, _ *http.Request) {
 		c.mu.Lock()
-		c.state.Players = []playerState{{ID: "spotify", Available: true}, {ID: "youtube", Available: true, Capabilities: []string{"load"}}}
+		c.state.Players = []playerState{{ID: "spotify", Available: true}, {ID: "youtube", Available: true, Capabilities: []string{"load", "enqueue", "autoplay", "clearqueue"}}}
 		c.mu.Unlock()
 		p.refresh()
 		w.WriteHeader(http.StatusNoContent)
@@ -270,11 +270,13 @@ document.addEventListener('DOMContentLoaded', () => {
   toolbar.append(label);
   document.body.prepend(toolbar);
   const hiddenImages = new Map();
+  let recoveryTimer;
   function restoreImages() {
     for (const [image, hidden] of hiddenImages) image.hidden = hidden;
     hiddenImages.clear();
   }
   function simulate(noArtwork) {
+    clearTimeout(recoveryTimer);
     if (!current) return;
     restoreImages();
     if (events) events.close();
@@ -293,7 +295,14 @@ document.addEventListener('DOMContentLoaded', () => {
   for (const [text, action] of [
     ['With cover', () => simulate(false)],
     ['Without cover', () => simulate(true)],
-    ['Recover', () => { restoreImages(); connect(); }]
+    ['Connect → idle', () => {
+      if (!current) return;
+      simulate(true);
+      current = {...current, players: ['spotify', 'youtube'].map(id => ({id, available: true, active: false}))};
+      render();
+      recoveryTimer = setTimeout(() => connection(true), 900);
+    }],
+    ['Recover', () => { clearTimeout(recoveryTimer); restoreImages(); connect(); }]
   ]) {
     const button = document.createElement('button');
     button.textContent = text; button.addEventListener('click', action);
