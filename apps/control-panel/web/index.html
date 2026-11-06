@@ -28,7 +28,8 @@
     </header>
     <h1 class="sr-only">Audio player</h1>
     <div class="player-workspace"><section id="spotify-panel" class="player-stage" role="tabpanel" aria-labelledby="spotify-tab" >
-      <div id="spotify-cover-stage" class="cover-stage"><div id="spotify-cover" class="artwork"><span class="artwork-note" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#artwork-placeholder"/></svg></span>
+      <div id="spotify-cover-stage" class="cover-stage"><div id="spotify-cover" class="artwork"><span class="artwork-note" aria-hidden="true"><svg id="spotify-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#artwork-placeholder"/></svg></span>
+<div id="spotify-ready" class="artwork-ready" role="status" hidden><p class="ready-title">Ready to play</p><p class="ready-instruction">Choose RaspPi in Spotify</p></div>
 <img id="spotify-artwork" width="84" height="84" alt="" referrerpolicy="no-referrer" decoding="async" hidden>
 <div id="spotify-track-info" class="track-info"><div id="spotify-track-box" class="track-box" data-overlay="true" tabindex="0" aria-label="Current Spotify title"><p id="spotify-track" class="track">Waiting for player state…</p><span id="spotify-full-title" class="full-title" aria-hidden="true"></span></div><p id="spotify-artist" class="artist"></p></div>
 <div id="spotify-playback-controls" class="playback-controls"><div class="timeline">
@@ -66,17 +67,19 @@
         <section id="spotify-up-next" class="up-next queue-section queue-section-readonly" aria-labelledby="spotify-up-next-heading">
           <h2 id="spotify-up-next-heading" class="sr-only">Up next</h2>
           <div class="queue-composer queue-source"><p class="hint">Managed in Spotify</p></div>
-          <div class="queue-toolbar"><button id="spotify-clearqueue" class="button" type="button" title="Manage your queue in Spotify" disabled>Clear queue</button></div>
+
           <div class="queue-viewport"><ol class="queue-list" aria-label="Upcoming Spotify tracks"><li class="queue-entry queue-entry-readonly" data-next="true"><button id="spotify-next-grip" class="button icon-button queue-handle" type="button" aria-label="Reorder next track" title="Manage your queue in Spotify" disabled><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg></button><button id="spotify-up-next-play" class="queue-track queue-play" type="button" aria-label="Play next Spotify track" disabled>
             <span class="queue-artwork" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#artwork-placeholder"/></svg><img id="spotify-up-next-artwork" alt="" referrerpolicy="no-referrer" hidden></span>
             <span class="queue-entry-text"><span id="spotify-up-next-title" class="queue-entry-title">Waiting for player…</span><span id="spotify-up-next-detail" class="queue-entry-detail"></span></span>
           </button><button id="spotify-next-remove" class="button icon-button queue-remove" type="button" aria-label="Remove next track" title="Manage your queue in Spotify" disabled>×</button></li></ol><div id="spotify-empty-slots" class="queue-empty-slots" aria-hidden="true"></div></div>
+          <div class="queue-toolbar"><button id="spotify-clearqueue" class="button" type="button" title="Manage your queue in Spotify" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M5 6l1 14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1l1-14M10 10v7M14 10v7"/></svg><span>Clear queue</span></button></div>
         </section>
         </div>
-        <div class="player-utilities"><div class="player-extra"><div class="spotify-handoff"><p>Listen from Spotify</p><p class="hint">Choose RaspPi in Spotify to play your music here</p></div></div></div><div class="action-slot" aria-hidden="true"></div>
+
       </div>
     </section><section id="youtube-panel" class="player-stage" role="tabpanel" aria-labelledby="youtube-tab" hidden>
-      <div id="youtube-cover-stage" class="cover-stage"><div id="youtube-cover" class="artwork"><span class="artwork-note" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#artwork-placeholder"/></svg></span>
+      <div id="youtube-cover-stage" class="cover-stage"><div id="youtube-cover" class="artwork"><span class="artwork-note" aria-hidden="true"><svg id="youtube-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#artwork-placeholder"/></svg></span>
+<div id="youtube-ready" class="artwork-ready" role="status" hidden><p class="ready-title">Ready to play</p><p class="ready-instruction">Add a YouTube link or link your phone</p></div>
 <img id="youtube-artwork" width="84" height="84" alt="" referrerpolicy="no-referrer" decoding="async" hidden>
 <div id="youtube-track-info" class="track-info"><div id="youtube-track-box" class="track-box" data-overlay="true" tabindex="0" aria-label="Current YouTube title"><p id="youtube-track" class="track">Waiting for player state…</p><span id="youtube-full-title" class="full-title" aria-hidden="true"></span></div><p id="youtube-artist" class="artist"></p></div>
 <div id="youtube-playback-controls" class="playback-controls"><div class="timeline">
@@ -117,7 +120,7 @@
             <input id="youtube-url" class="text-input" aria-label="YouTube link" type="url" placeholder="Paste a YouTube link" maxlength="512" required autocomplete="off" spellcheck="false" disabled>
             <button id="youtube-enqueue" class="button queue-add" type="submit" value="enqueue" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h15M3 11h15M3 16h7M17 14v8M13 18h8"/></svg><span>Add to queue</span></button>
           </form>
-          <div class="queue-toolbar"><p id="youtube-action-feedback" class="action-feedback" role="status" hidden></p><p id="youtube-queue-error" class="action-feedback error" role="status" hidden></p><button id="youtube-clearqueue" class="button" type="button" disabled>Clear queue</button></div>
+
           <div class="queue-viewport">
           <div id="youtube-recommendation-row" class="queue-entry queue-entry-readonly" data-next="true"><button id="youtube-next-grip" class="button icon-button queue-handle" type="button" aria-label="Reorder next track" title="Recommendations cannot be reordered or removed" disabled><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg></button><div class="queue-track">
             <div class="queue-artwork" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#artwork-placeholder"/></svg><img id="youtube-up-next-artwork" alt="" referrerpolicy="no-referrer" hidden></div>
@@ -125,8 +128,8 @@
           </div><button id="youtube-next-remove" class="button icon-button queue-remove" type="button" aria-label="Remove next track" title="Recommendations cannot be reordered or removed" disabled>×</button></div>
             <ol id="youtube-queue-list" class="queue-list" aria-label="Queued YouTube videos" tabindex="0"></ol>
             <div id="youtube-empty-slots" class="queue-empty-slots" aria-hidden="true"></div>
-            <p id="youtube-queue-empty" class="hint">Your queue is empty.</p>
           </div>
+          <div class="queue-toolbar"><p id="youtube-action-feedback" class="action-feedback" role="status" hidden></p><p id="youtube-queue-error" class="action-feedback error" role="status" hidden></p><button id="youtube-clearqueue" class="button" type="button" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M5 6l1 14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1l1-14M10 10v7M14 10v7"/></svg><span>Clear queue</span></button></div>
           <p id="queue-reorder-help" class="sr-only">Drag to reorder, or use the up and down arrow keys on a reorder handle.</p>
           <p id="queue-announcement" class="sr-only" role="status" aria-live="polite"></p>
         </div>

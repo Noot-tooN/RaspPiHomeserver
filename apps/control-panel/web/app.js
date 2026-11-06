@@ -97,7 +97,10 @@ function connection(online, label) {
       $(id + '-cover').dataset.connecting = String(image.hidden || !image.dataset.url);
     }
     connectionTimer = setTimeout(() => {
-      for (const id of ['spotify', 'youtube']) $(id + '-cover').dataset.connecting = 'true';
+      for (const id of ['spotify', 'youtube']) {
+        $(id + '-cover').dataset.connecting = 'true';
+        renderNoteMotion(id);
+      }
     }, 250);
   }
   for (const id of ['spotify', 'youtube']) $(id + '-spectrum').dataset.frozen = String(!online || document.hidden);
@@ -197,13 +200,12 @@ function renderUpNext(id, player, available) {
   } : null;
   const pending = !next && Boolean(id === 'youtube' && player?.autoplay_pending);
   const title = next?.title || (!player ? 'Waiting for player…' : !player.available ? 'Player unavailable'
-    : pending ? 'Finding a recommendation…' : id === 'youtube' && !player.autoplay ? 'Nothing queued'
-    : 'Nothing up next');
+    : pending ? 'Finding a recommendation…' : 'Nothing up next');
   $(id + '-up-next').setAttribute('aria-busy', String(pending));
   $(id + '-up-next').dataset.empty = String(!next);
   $(id + '-up-next-title').textContent = title;
   $(id + '-up-next-title').title = title;
-  $(id + '-up-next-detail').textContent = next ? ['Next', next.artist].filter(Boolean).join(' · ') : (id === 'youtube' && !player?.autoplay && player ? 'Autoplay is off' : '');
+  $(id + '-up-next-detail').textContent = next ? ['Next', next.artist].filter(Boolean).join(' · ') : '';
   if (id === 'spotify') {
     const play = $('spotify-up-next-play');
     setControlDisabled(play, !available || !next || !player?.capabilities?.includes('next'));
@@ -421,10 +423,8 @@ function renderQueue(player, available) {
     setControlDisabled(row.remove, !available || !player?.capabilities?.includes('removequeue') || entry.starting);
     if (list.children[index] !== row.element) list.insertBefore(row.element, list.children[index] || null);
   });
-  const showRecommendation = !entries.length && Boolean(player?.autoplay && (player?.recommendation || player?.autoplay_pending));
-  $('youtube-recommendation-row').hidden = !showRecommendation;
-  $('youtube-queue-empty').hidden = entries.length > 0 || showRecommendation;
-  $('youtube-queue-empty').textContent = 'Your queue is empty.';
+  // The same row presents either a recommendation or the empty-state placeholder.
+  $('youtube-recommendation-row').hidden = entries.length > 0;
   renderEmptySlots('youtube', Math.max(1, entries.length));
   if (queueDrag?.active) previewQueueDrop(false);
 }
