@@ -161,7 +161,7 @@ button:focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible,.
 .player-stage { min-width: 0; display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); align-items: center; gap: clamp(40px,6vw,96px); padding: 40px 0; }
 .cover-stage { --cover-size: min(100%,max(320px,calc(100svh - 168px))); display: grid; justify-items: center; gap: 20px; min-width: 0; }
 .artwork { width: var(--cover-size); aspect-ratio: 1; display: grid; place-items: center; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--page); color: var(--control-border); }
-.artwork-note { position: absolute; inset: 0; margin: auto; z-index: 1; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 50%; pointer-events: none; transition: transform var(--ready-transition), opacity 250ms ease, background-color 250ms ease, color 250ms ease; }
+.artwork-note { color: var(--control-border); position: absolute; inset: 0; margin: auto; z-index: 1; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 50%; pointer-events: none; transition: transform var(--ready-transition), opacity 250ms ease, background-color 250ms ease, color 250ms ease; }
 .artwork-note svg { width: 64px; height: 64px; transform-origin: center; }
 .artwork:not([data-connecting=true]):has(img:not([hidden])) .artwork-note { opacity: 0; }
 .artwork[data-connecting=true] .artwork-note { opacity: 1; }
