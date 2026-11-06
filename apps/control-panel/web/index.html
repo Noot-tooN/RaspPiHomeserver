@@ -29,9 +29,9 @@
     <h1 class="sr-only">Audio player</h1>
     <div class="player-workspace"><section id="spotify-panel" class="player-stage" role="tabpanel" aria-labelledby="spotify-tab" >
       <div id="spotify-cover-stage" class="cover-stage"><div id="spotify-cover" class="artwork"><span class="artwork-note" aria-hidden="true"><svg id="spotify-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#artwork-placeholder"/></svg></span>
-<div id="spotify-ready" class="artwork-ready" role="status" hidden><p class="ready-title">Ready to play</p><p class="ready-instruction">Choose RaspPi in Spotify</p></div>
+<div id="spotify-ready" class="artwork-ready" role="status" aria-hidden="true"><p class="ready-title">Ready to play</p><p class="ready-instruction">Choose RaspPi in Spotify</p></div>
 <img id="spotify-artwork" width="84" height="84" alt="" referrerpolicy="no-referrer" decoding="async" hidden>
-<div id="spotify-track-info" class="track-info"><div id="spotify-track-box" class="track-box" data-overlay="true" tabindex="0" aria-label="Current Spotify title"><p id="spotify-track" class="track">Waiting for player state…</p><span id="spotify-full-title" class="full-title" aria-hidden="true"></span></div><p id="spotify-artist" class="artist"></p></div>
+<div id="spotify-track-info" class="track-info"><div id="spotify-track-box" class="track-box" data-overlay="true" tabindex="0" aria-label="Current Spotify title"><p id="spotify-track" class="track is-idle">Waiting for player state…</p><span id="spotify-full-title" class="full-title" aria-hidden="true"></span></div><p id="spotify-artist" class="artist"></p></div>
 <div id="spotify-playback-controls" class="playback-controls"><div class="timeline">
               <div class="slider-row"><input id="spotify-seek" class="seek" type="range" min="0" max="1" step="1" value="0" aria-label="Spotify playback position" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
               <div class="time-labels"><span id="spotify-elapsed">—:—</span><span id="spotify-duration">—:—</span></div>
@@ -79,9 +79,9 @@
       </div>
     </section><section id="youtube-panel" class="player-stage" role="tabpanel" aria-labelledby="youtube-tab" hidden>
       <div id="youtube-cover-stage" class="cover-stage"><div id="youtube-cover" class="artwork"><span class="artwork-note" aria-hidden="true"><svg id="youtube-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#artwork-placeholder"/></svg></span>
-<div id="youtube-ready" class="artwork-ready" role="status" hidden><p class="ready-title">Ready to play</p><p class="ready-instruction">Add a YouTube link or link your phone</p></div>
+<div id="youtube-ready" class="artwork-ready" role="status" aria-hidden="true"><p class="ready-title">Ready to play</p><p class="ready-instruction">Add a YouTube link or link your phone</p></div>
 <img id="youtube-artwork" width="84" height="84" alt="" referrerpolicy="no-referrer" decoding="async" hidden>
-<div id="youtube-track-info" class="track-info"><div id="youtube-track-box" class="track-box" data-overlay="true" tabindex="0" aria-label="Current YouTube title"><p id="youtube-track" class="track">Waiting for player state…</p><span id="youtube-full-title" class="full-title" aria-hidden="true"></span></div><p id="youtube-artist" class="artist"></p></div>
+<div id="youtube-track-info" class="track-info"><div id="youtube-track-box" class="track-box" data-overlay="true" tabindex="0" aria-label="Current YouTube title"><p id="youtube-track" class="track is-idle">Waiting for player state…</p><span id="youtube-full-title" class="full-title" aria-hidden="true"></span></div><p id="youtube-artist" class="artist"></p></div>
 <div id="youtube-playback-controls" class="playback-controls"><div class="timeline">
               <div class="slider-row"><input id="youtube-seek" class="seek" type="range" min="0" max="1" step="1" value="0" aria-label="YouTube playback position" aria-valuetext="Unavailable" disabled><span class="volume-tooltip" aria-hidden="true" hidden></span></div>
               <div class="time-labels"><span id="youtube-elapsed">—:—</span><span id="youtube-duration">—:—</span></div>

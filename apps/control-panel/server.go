@@ -57,9 +57,9 @@ func (p *panel) refresh() {
 	}
 }
 
-// A single monitor serves every open page. With no visible viewers it runs no
+// A single monitor serves every connected page. With no clients it runs no
 // subprocesses. Actions request an immediate refresh; external changes are
-// picked up every five seconds while a page is visible.
+// picked up every five seconds. Hidden pages disconnect after a grace period.
 func (p *panel) monitor(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()

@@ -12,7 +12,28 @@ const connectionNoteFrames = [
   [0, 0], [.0875, -12], [.175, 10], [.2625, -8],
   [.7125, 378], [.825, 355], [.9375, 360], [1, 360]
 ].map(([offset, angle]) => ({offset, transform: `rotate(${angle}deg)`, easing: 'ease-in-out'}));
+function setNoteIdle(id, idle) {
+  $(id + '-cover').dataset.noteIdle = String(idle);
+  $(id + '-ready').setAttribute('aria-hidden', String(!idle));
+  const info = $(id + '-track-info');
+  info.setAttribute('aria-hidden', String(idle));
+  info.inert = idle;
+}
 function renderNoteMotion(id) {
+  if (connectionGrace) {
+    // Preserve the displayed state during a brief recovery, but honor a change
+    // to reduced motion immediately rather than waiting for the next snapshot.
+    if (reducedMotion.matches) {
+      const motion = noteMotions.get(id);
+      if (motion) {
+        clearTimeout(motion.timer);
+        motion.version++;
+        motion.animation?.cancel();
+        motion.animation = null;
+      }
+    }
+    return;
+  }
   const cover = $(id + '-cover'), note = $(id + '-note');
   const still = reducedMotion.matches || document.hidden;
   const target = cover.dataset.connecting === 'true' ? 'connecting' : cover.dataset.ready === 'true' ? 'idle' : 'rest';
@@ -30,6 +51,7 @@ function renderNoteMotion(id) {
     cancel();
     motion.animation = note.animate(frames, {...options, fill: 'forwards'});
     motion.animation.onfinish = () => { if (motion.version === version) finish?.(); };
+    if (document.hidden) motion.animation.pause();
   };
   const loop = () => {
     if (target === 'connecting') {
@@ -49,13 +71,13 @@ function renderNoteMotion(id) {
   const enterIdle = () => {
     cancel(); // A complete turn and identity are the same visible pose.
     motion.phase = 'settling';
-    cover.dataset.noteIdle = 'true';
+    setNoteIdle(id, true);
     motion.timer = setTimeout(() => { if (motion.version === version) loop(); }, 320);
   };
   if (still) {
     cancel();
     motion.phase = target;
-    cover.dataset.noteIdle = String(target === 'idle');
+    setNoteIdle(id, target === 'idle');
     return;
   }
   if (target === 'idle' && motion.phase === 'connecting' && motion.animation) {
@@ -71,7 +93,7 @@ function renderNoteMotion(id) {
     motion.animation.onfinish = null;
     return;
   }
-  cover.dataset.noteIdle = 'false';
+  setNoteIdle(id, false);
   if (motion.animation) {
     // Interrupted idle/settling or arriving artwork: preserve the visible pose
     // before cancelling, then ease upright rather than resetting the transform.
@@ -122,17 +144,17 @@ function renderMedia(id, player, available) {
   const name = id === 'spotify' ? 'Spotify' : 'YouTube';
   const ready = Boolean(available && !player?.active && !player?.title && !player?.track_id && !player?.video_id);
   $(id + '-cover').dataset.ready = String(ready);
-  $(id + '-ready').hidden = !ready;
-  $(id + '-track-info').hidden = ready;
-  const title = !player ? 'Waiting for player state…' : player?.title || (player?.active ? 'Title unavailable' : id === 'spotify' ? 'Choose RaspPi in Spotify' : 'Paste a link or cast from your phone');
   const track = $(id + '-track'), box = $(id + '-track-box');
+  // Keep the outgoing text, font and gradient geometry intact while the note
+  // completes its turn. The visual idle state fades them together afterward.
+  const title = ready && track.textContent ? track.textContent : !player ? 'Waiting for player state…' : player?.title || (player?.active ? 'Title unavailable' : id === 'spotify' ? 'Choose RaspPi in Spotify' : 'Paste a link or cast from your phone');
   if (track.textContent !== title) track.textContent = title;
-  track.classList.toggle('is-idle', !player?.active);
+  if (!ready) track.classList.toggle('is-idle', !player?.active);
   box.dataset.active = String(Boolean(connected && player?.active));
   box.setAttribute('aria-label', title);
   $(id + '-full-title').textContent = title;
   const artist = $(id + '-artist');
-  artist.textContent = player?.active ? player.artist || '' : '';
+  if (!ready) artist.textContent = player?.active ? player.artist || '' : '';
   artist.title = artist.textContent;
   const image = $(id + '-artwork');
   const url = player?.active ? player.artwork_url || '' : '';
@@ -159,7 +181,7 @@ function renderMedia(id, player, available) {
   const drag = seekDragging.get(id);
   if (drag && (drag.mediaID !== key || !available)) drag.invalid = true;
   const old = timelines.get(id);
-  if (!old || old.player !== player) timelines.set(id, {player, received: performance.now(), available});
+  if (!old || old.player !== player) timelines.set(id, {player, received: performance.now() - (lastStateAt === null ? 0 : Math.max(0, Date.now() - lastStateAt)), available});
   else old.available = available;
   renderTimeline(id);
 }
@@ -175,6 +197,7 @@ function freezeTimelines() {
   }
 }
 function renderTimeline(id) {
+  if (document.hidden) return;
   const entry = timelines.get(id), player = entry?.player, slider = $(id + '-seek');
   const known = player?.available && player?.active && Number.isFinite(player.duration_ms) && player.duration_ms > 0 && Number.isFinite(player.position_ms) && !player.live;
   const drag = seekDragging.get(id);
@@ -193,7 +216,7 @@ function renderTimeline(id) {
 // Use the current media identity and interpolated position, never a stale slider value.
 function relativeSeekTarget(id, seconds, ignorePending = false) {
   const entry = timelines.get(id), player = entry?.player;
-  if (!connected || (busy && !ignorePending) || seekDragging.has(id) || !entry?.available || !player?.available || !player.active || player.live || !player.capabilities?.includes('seek') || !mediaID(player) || !Number.isFinite(player.position_ms) || !Number.isFinite(player.duration_ms) || player.duration_ms <= 0 || !Number.isFinite(seconds)) return null;
+  if (document.hidden || !connected || (busy && !ignorePending) || seekDragging.has(id) || !entry?.available || !player?.available || !player.active || player.live || !player.capabilities?.includes('seek') || !mediaID(player) || !Number.isFinite(player.position_ms) || !Number.isFinite(player.duration_ms) || player.duration_ms <= 0 || !Number.isFinite(seconds)) return null;
   const elapsed = player.paused ? 0 : Math.max(0, performance.now() - entry.received);
   const position = Math.min(player.duration_ms, player.position_ms + elapsed);
   return {player: id, action: 'seek', position_ms: Math.round(Math.max(0, Math.min(player.duration_ms, position + seconds * 1000))), media_id: mediaID(player)};

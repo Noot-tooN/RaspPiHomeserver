@@ -11,7 +11,9 @@ let queueDrag = null;
 let pendingQueueMove = null;
 let queueMoveTimer;
 let spectrumTimer, connectionTimer;
-let connectionPending = false;
+let connectionPending = false, connectionGrace = false;
+const backgroundGraceMs = 120000, stateFreshMs = 16000;
+let backgroundTimer, hiddenSince = null, lastStateAt = null;
 const spectrumBars = Object.fromEntries(['spotify', 'youtube'].map(id => {
   $(id + '-spectrum').hidden = !visualizerEnabled;
   const bars = Array.from({length: visualizerEnabled ? 48 : 0}, (_, index) => {
@@ -80,28 +82,31 @@ function notice(message, error = false) {
   if (!error) noticeTimer = setTimeout(() => { $('notice').hidden = true; }, 5000);
 }
 
-function connection(online, label) {
+function connection(online, label, quiet = false) {
   if (connected && !online) freezeTimelines();
   connected = online;
   if (online || document.hidden) {
     clearTimeout(connectionTimer);
     connectionTimer = undefined;
     connectionPending = false;
+    connectionGrace = false;
     for (const id of ['spotify', 'youtube']) $(id + '-cover').dataset.connecting = 'false';
   } else if (!connectionPending) {
     connectionPending = true;
+    connectionGrace = quiet && Boolean(current);
     // Empty covers already show the note: animate it immediately. Only delay
     // introducing an overlay over artwork, to avoid flashing on brief outages.
     for (const id of ['spotify', 'youtube']) {
       const image = $(id + '-artwork');
-      $(id + '-cover').dataset.connecting = String(image.hidden || !image.dataset.url);
+      $(id + '-cover').dataset.connecting = String(!quiet && (image.hidden || !image.dataset.url));
     }
     connectionTimer = setTimeout(() => {
+      connectionGrace = false;
       for (const id of ['spotify', 'youtube']) {
         $(id + '-cover').dataset.connecting = 'true';
         renderNoteMotion(id);
       }
-    }, 250);
+    }, quiet ? 750 : 250);
   }
   for (const id of ['spotify', 'youtube']) $(id + '-spectrum').dataset.frozen = String(!online || document.hidden);
   $('connection-text').textContent = label || (online ? 'Connected' : current ? 'Reconnecting' : 'Connecting');
@@ -619,12 +624,26 @@ for (const slider of document.querySelectorAll('.slider-row input[type=range]'))
   slider.addEventListener('keydown', event => { if (event.key === 'Escape') hide(); });
 }
 
-function connect() {
+function closeEvents() {
   if (events) events.close();
+  events = null;
   clearTimeout(staleTimer);
   clearTimeout(spectrumTimer);
-  if (document.hidden) { events = null; connection(false, 'Updates paused'); return; }
-  connection(false);
+}
+function expireBackgroundConnection() {
+  closeEvents();
+  connected = false;
+}
+function watchStateFreshness() {
+  clearTimeout(staleTimer);
+  if (!document.hidden && lastStateAt !== null) {
+    staleTimer = setTimeout(() => connection(false), Math.max(0, stateFreshMs - (Date.now() - lastStateAt)));
+  }
+}
+function connect(quiet = false) {
+  closeEvents();
+  if (document.hidden) { connected = false; return; }
+  connection(false, undefined, quiet);
   const source = new EventSource(!visualizerEnabled || reducedMotion.matches ? 'api/events?spectrum=0' : 'api/events');
   events = source;
   source.addEventListener('spectrum', event => {
@@ -634,15 +653,57 @@ function connect() {
     spectrumTimer = setTimeout(renderSpectrum, 1000);
   });
   source.onmessage = event => {
-    if (events !== source || document.hidden) return;
-    try { current = JSON.parse(event.data); } catch { connection(false); return; }
-    clearTimeout(staleTimer);
-    staleTimer = setTimeout(() => connection(false), 16000);
+    if (events !== source) return;
+    // Check elapsed time as well as the timer: background timers can be delayed.
+    if (document.hidden && hiddenSince !== null && Date.now() - hiddenSince >= backgroundGraceMs) {
+      expireBackgroundConnection(); return;
+    }
+    try { current = JSON.parse(event.data); }
+    catch { if (document.hidden) connected = false; else connection(false); return; }
+    lastStateAt = Date.now();
+    if (document.hidden) { connected = true; return; }
+    watchStateFreshness();
     connection(true);
   };
-  source.onerror = () => { if (events === source && !document.hidden) connection(false); };
+  source.onerror = () => {
+    if (events !== source) return;
+    if (document.hidden) connected = false;
+    else connection(false);
+  };
 }
-document.addEventListener('visibilitychange', connect);
-reducedMotion.addEventListener('change', connect);
+function pageVisibility() {
+  clearTimeout(backgroundTimer);
+  if (document.hidden) {
+    hiddenSince = Date.now();
+    clearTimeout(staleTimer);
+    clearTimeout(spectrumTimer);
+    clearTimeout(connectionTimer);
+    connectionPending = false;
+    connectionGrace = false;
+    dragging = false;
+    playerDragging.clear();
+    seekDragging.clear();
+    for (const id of ['spotify', 'youtube']) {
+      titleAnimations.get(id)?.animation?.pause();
+      noteMotions.get(id)?.animation?.pause();
+      $(id + '-spectrum').dataset.frozen = 'true';
+    }
+    backgroundTimer = setTimeout(expireBackgroundConnection, backgroundGraceMs);
+    return;
+  }
+  const expired = hiddenSince !== null && Date.now() - hiddenSince >= backgroundGraceMs;
+  hiddenSince = null;
+  if (!expired && events && connected && lastStateAt !== null && Date.now() - lastStateAt < stateFreshMs) {
+    watchStateFreshness();
+    connection(true);
+  } else connect(true);
+  for (const id of ['spotify', 'youtube']) {
+    noteMotions.get(id)?.animation?.play();
+    const box = $(id + '-track-box');
+    if (!box.matches(':hover, :focus-within')) titleAnimations.get(id)?.animation?.play();
+  }
+}
+document.addEventListener('visibilitychange', pageVisibility);
+reducedMotion.addEventListener('change', () => connect());
 initPlayerUI();
 connect();

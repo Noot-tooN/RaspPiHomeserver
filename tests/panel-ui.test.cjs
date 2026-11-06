@@ -22,7 +22,7 @@ function ui(shell = false, visualizer = false) {
       animations: [],
       animate(frames, options) {
         const animation = {frames, options: {...options}, currentTime: 0, cancelled: false,
-          cancel() { this.cancelled = true; }, pause() {},
+          cancel() { this.cancelled = true; }, pause() { this.paused = true; }, play() { this.paused = false; },
           finish() { this.onfinish?.(); }};
         animation.effect = {updateTiming(timing) { Object.assign(animation.options, timing); }};
         this.animations.push(animation);
@@ -41,7 +41,7 @@ function ui(shell = false, visualizer = false) {
     addEventListener(name, fn) { this.handlers[name] = fn; }
     close() { this.closed = true; }
   }
-  const context = vm.createContext({document, Event, EventSource, URLSearchParams, window: {location: {search: visualizer ? "?visualizer=1" : ""}, addEventListener() {}}, performance: {now: () => now},
+  const context = vm.createContext({document, Event, EventSource, URLSearchParams, Date: class extends Date { static now() { return now; } }, window: {location: {search: visualizer ? "?visualizer=1" : ""}, addEventListener() {}}, performance: {now: () => now},
     getComputedStyle: node => ({transform: node.pose || 'matrix(1, 0, 0, 1, 0, 0)'}),
     matchMedia: () => ({matches: true, addEventListener() {}}),
     requestAnimationFrame() { return 1; }, cancelAnimationFrame() {}, ResizeObserver: class { observe() {} }, setTimeout(fn, delay) { timers.set(++timerID, {fn, delay}); return timerID; }, clearTimeout(id) { timers.delete(id); }, setInterval() {}
@@ -63,37 +63,75 @@ function snapshot() {
       track_id: 'spotify:track:example', video_id: 'abcdefghijk', position_ms: 60000, duration_ms: 240000,
       capabilities: ['volume', 'mute', 'seek', 'pause', 'load']}))};
 }
-test('tab switches retain media and pause controls until a fresh snapshot arrives', () => {
+test('brief tab switches keep the stream and apply the latest background state without rendering it early', () => {
   const page = ui();
-  assert.equal(page.element('connection-text').textContent, 'Connecting');
-  assert.equal(page.element('volume-note').textContent, '');
   page.receive(snapshot()); page.advance(2000);
+  const source = page.sources[0];
   page.visibility(true);
-  assert.equal(page.sources[0].closed, true);
-  assert.equal(page.element('connection-text').textContent, 'Updates paused');
-  for (const id of ['spotify', 'youtube']) {
-    assert.equal(page.element(id + '-track').textContent, 'Current title');
-    assert.equal(page.element(id + '-artist').textContent, 'Current artist');
-    assert.equal(page.element(id + '-artwork').dataset.url, 'https://i.scdn.co/image/example');
-    assert.equal(page.element(id + '-volume').value, 65);
-    assert.equal(page.element(id + '-seek').value, '62');
-    assert.equal(page.element(id + '-seek').disabled, true);
-    assert.equal(page.element(id + '-mute').disabled, true);
-  }
-  page.advance(30000); page.visibility(false);
-  assert.equal(page.element('connection-text').textContent, 'Reconnecting');
-  assert.equal(page.element('spotify-seek').value, '62');
-  assert.equal(page.element('volume').disabled, true);
-  const fresh = snapshot(); fresh.players[0].position_ms = 95000;
+  assert.notEqual(source.closed,true);
+  assert.equal(page.element('connection-text').textContent,'Connected');
+  page.advance(5000);
+  const fresh = snapshot(); fresh.players[0].position_ms=95000; fresh.players[0].title='Background track';
   page.receive(fresh);
-  assert.equal(page.element('connection-text').textContent, 'Connected');
-  assert.equal(page.element('spotify-seek').value, '95');
-  assert.equal(page.element('volume').disabled, false);
+  assert.equal(page.element('spotify-track').textContent,'Current title');
+  page.advance(2000); page.visibility(false);
+  assert.equal(page.sources.length,1);
+  assert.equal(page.element('connection-text').textContent,'Connected');
+  assert.equal(page.element('spotify-track').textContent,'Background track');
+  assert.equal(page.element('spotify-seek').value,'97');
+  assert.equal(page.element('volume').disabled,false);
+  assert.equal(page.element('spotify-cover').dataset.connecting,'false');
+  page.flushDelay(120000); // The cancelled background timeout cannot close it.
+  assert.notEqual(source.closed,true);
+});
+test('two minutes in the background closes the stream and preserves content during a quiet recovery', () => {
+  const page = ui(); page.receive(snapshot()); page.visibility(true);
+  page.advance(120000); page.flushDelay(120000);
+  assert.equal(page.sources[0].closed,true);
+  page.visibility(false);
+  assert.equal(page.sources.length,2);
+  assert.equal(page.element('spotify-track').textContent,'Current title');
+  assert.equal(page.element('volume').disabled,true);
+  assert.equal(page.element('spotify-cover').dataset.connecting,'false');
+  page.receive(snapshot()); page.flushDelay(750);
+  assert.equal(page.element('volume').disabled,false);
+  assert.equal(page.element('spotify-cover').dataset.connecting,'false');
+});
+test('return checks actual freshness even when background timers never ran', () => {
+  const page = ui(); page.receive(snapshot()); page.visibility(true);
+  page.advance(20000); page.visibility(false);
+  assert.equal(page.sources[0].closed,true);
+  assert.equal(page.sources.length,2);
+  assert.equal(page.element('volume').disabled,true);
+  page.flushDelay(750);
+  assert.equal(page.element('spotify-cover').dataset.connecting,'true');
+  page.receive(snapshot());
+  assert.equal(page.element('spotify-cover').dataset.connecting,'false');
+});
+test('background updates cannot extend the two minute deadline when timers are throttled', () => {
+  const page = ui(); page.receive(snapshot()); page.visibility(true);
+  page.advance(119000); page.receive(snapshot());
+  assert.notEqual(page.sources[0].closed,true);
+  page.advance(1000); page.receive(snapshot());
+  assert.equal(page.sources[0].closed,true);
+  page.visibility(false);
+  assert.equal(page.sources.length,2);
+});
+test('repeated short visits reset the grace period, and stream errors still require fresh state', () => {
+  const page = ui(); page.receive(snapshot());
+  page.visibility(true); page.advance(10000); page.receive(snapshot()); page.visibility(false);
+  page.visibility(true); page.advance(110000); page.receive(snapshot()); page.visibility(false);
+  assert.equal(page.sources.length,1);
+  page.visibility(true); page.sources[0].onerror(); page.visibility(false);
+  assert.equal(page.sources.length,2);
+  assert.equal(page.element('volume').disabled,true);
+  page.receive(snapshot());
+  assert.equal(page.element('volume').disabled,false);
 });
 test('disconnect reports once and late events from a closed stream cannot change the UI', () => {
   const page = ui(); page.receive(snapshot());
   const old = page.sources[0];
-  page.visibility(true); page.visibility(false);
+  page.visibility(true); page.advance(120000); page.visibility(false);
   page.receive(snapshot()); old.onerror();
   const stale = snapshot(); stale.audio.volume = 1;
   page.receive(stale, old);
@@ -721,6 +759,9 @@ test('initial HTML puts controls on the cover and keeps Checking hidden before s
     assert.ok(parents.get(id+'-playback-controls').includes(id+'-cover'));
     assert.ok(!parents.get(id+'-playback-controls').includes(id+'-up-next'));
     assert.match(attrs.get(id+'-status'),/\bhidden\b/);
+    assert.match(attrs.get(id+'-track'),/class="track is-idle"/);
+    assert.match(attrs.get(id+'-ready'),/aria-hidden="true"/);
+    assert.doesNotMatch(attrs.get(id+'-ready'),/\shidden(?:\s|$)/);
   }
 });
 
@@ -773,21 +814,21 @@ test('ready guidance appears only for connected, available players without loade
   page.receive(state);
   for (const id of ['spotify','youtube']) {
     assert.equal(page.element(id+'-cover').dataset.ready,'true');
-    assert.equal(page.element(id+'-ready').hidden,false);
-    assert.equal(page.element(id+'-track-info').hidden,true);
+    assert.equal(page.element(id+'-ready')['aria-hidden'],'false');
+    assert.equal(page.element(id+'-track-info').inert,true);
   }
   page.sources.at(-1).onerror();
-  assert.equal(page.element('spotify-ready').hidden,true);
+  assert.equal(page.element('spotify-ready')['aria-hidden'],'true');
   assert.equal(page.element('spotify-cover').dataset.ready,'false');
   page.receive(state);
-  assert.equal(page.element('spotify-ready').hidden,false);
+  assert.equal(page.element('spotify-ready')['aria-hidden'],'false');
   state.players[0].available=false; page.receive(state);
-  assert.equal(page.element('spotify-ready').hidden,true);
+  assert.equal(page.element('spotify-ready')['aria-hidden'],'true');
   const paused = snapshot(); paused.players.forEach(player => {player.paused=true;}); page.receive(paused);
   for (const id of ['spotify','youtube']) {
     assert.equal(page.element(id+'-cover').dataset.ready,'false');
-    assert.equal(page.element(id+'-ready').hidden,true);
-    assert.equal(page.element(id+'-track-info').hidden,false);
+    assert.equal(page.element(id+'-ready')['aria-hidden'],'true');
+    assert.equal(page.element(id+'-track-info').inert,false);
   }
   paused.players[0].active=false; page.receive(paused);
   assert.equal(page.element('spotify-cover').dataset.ready,'false');
@@ -808,12 +849,20 @@ test('connection to idle finishes the current turn before moving, without delayi
     assert.equal(page.element('volume').disabled,false);
     assert.equal(cover.dataset.ready,'true');
     assert.equal(cover.dataset.noteIdle,'false');
+    assert.equal(page.element('spotify-track').textContent,'Waiting for player state…');
+    assert.equal(page.element('spotify-track-info').hidden,false);
+    assert.equal(page.element('spotify-track-info').inert,false);
+    assert.equal(page.element('spotify-ready')['aria-hidden'],'true');
     assert.equal(note.animations.at(-1),spin);
     assert.equal(spin.options.iterations,Math.floor(time/1600)+1);
     page.receive(state); // Repeated snapshots preserve the pending handoff.
     assert.equal(note.animations.at(-1),spin);
     spin.finish();
     assert.equal(cover.dataset.noteIdle,'true');
+    assert.equal(page.element('spotify-track').textContent,'Waiting for player state…');
+    assert.equal(page.element('spotify-track-info').hidden,false); // CSS fades the whole layer.
+    assert.equal(page.element('spotify-track-info').inert,true);
+    assert.equal(page.element('spotify-ready')['aria-hidden'],'false');
     assert.equal(spin.cancelled,true);
     page.flushDelay(320);
     const idle = note.animations.at(-1);
@@ -858,9 +907,52 @@ test('track arrival during rotation settles from its current pose; reduced motio
   page.sources.at(-1).onerror(); page.flushDelay(250);
   const spin=note.animations.at(-1);
   page.visibility(true);
-  assert.equal(spin.cancelled,true);
+  assert.equal(spin.paused,true);
+  assert.equal(spin.cancelled,false);
   page.visibility(false);
   vm.runInContext("reducedMotion.matches=true; renderNoteMotion('spotify');",page.context);
   assert.equal(note.animations.at(-1).cancelled,true);
   assert.equal(cover.dataset.noteIdle,'false');
+});
+
+test('idle animation pauses across a short tab switch without changing its pose or restarting', () => {
+  const {page,state,note,cover} = movingNotes();
+  page.receive(state); note.animations.at(-1).finish(); page.flushDelay(320);
+  const idle = note.animations.at(-1); idle.currentTime = 1100;
+  page.visibility(true);
+  assert.equal(idle.paused,true);
+  page.advance(5000); page.receive(state); page.visibility(false);
+  assert.equal(note.animations.at(-1),idle);
+  assert.equal(idle.currentTime,1100);
+  assert.equal(idle.paused,false);
+  assert.equal(cover.dataset.noteIdle,'true');
+});
+test('quiet recovery preserves idle visuals until the cue delay, and stale completions cannot overwrite a fresh stream', () => {
+  const {page,state,cover} = movingNotes();
+  page.receive(state); page.element('spotify-note').animations.at(-1).finish(); page.flushDelay(320);
+  page.visibility(true); page.advance(120000); page.visibility(false);
+  assert.equal(cover.dataset.noteIdle,'true');
+  assert.equal(cover.dataset.connecting,'false');
+  page.receive(state); page.flushDelay(750);
+  assert.equal(cover.dataset.noteIdle,'true');
+  assert.equal(cover.dataset.connecting,'false');
+  page.sources[0].onerror();
+  assert.equal(page.element('connection-text').textContent,'Connected');
+});
+test('return after the background deadline reconnects even with fresh data and a delayed timeout', () => {
+  const page = ui(); page.receive(snapshot()); page.visibility(true);
+  page.advance(119000); page.receive(snapshot());
+  page.advance(2000); page.visibility(false);
+  assert.equal(page.sources[0].closed,true);
+  assert.equal(page.sources.length,2);
+});
+test('freshness watchdog on return uses the age of the last background snapshot', () => {
+  const page = ui(); page.receive(snapshot()); page.visibility(true);
+  page.advance(5000); page.receive(snapshot());
+  page.advance(10000); page.visibility(false);
+  assert.equal(page.sources.length,1);
+  page.advance(6000); page.flushDelay(6000);
+  assert.equal(page.element('volume').disabled,true);
+  page.receive(snapshot());
+  assert.equal(page.element('volume').disabled,false);
 });
