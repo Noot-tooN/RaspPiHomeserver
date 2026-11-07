@@ -18,6 +18,8 @@
   };
   let error = '', generation = 0, fetching = false;
   let suggested = null, suggestedFor = '', attempted = '';
+  let attemptCount = 0, retryAt = 0;
+  const retryDelays = [5000, 15000];
   let pending = saved?.pending && validID(saved.pending.id) && Number.isFinite(saved.pending.at)
     ? {id: saved.pending.id, from: validID(saved.pending.from) ? saved.pending.from : '', entryID: typeof saved.pending.entryID === 'string' ? saved.pending.entryID : '', previous: saved.pending.previous === true, at: saved.pending.at} : null;
   const player = () => document.getElementById('ytlr-player__player-container-player');
@@ -49,12 +51,27 @@
     let data;
     try { data = await response.json(); }
     catch { throw new Error('Could not read a recommendation. Add another link to continue.'); }
-    // Use YouTube's explicit Up next selection, never an arbitrary search result.
+    const text = value => {
+      const title = value?.simpleText || value?.runs?.map(run => run.text || '').join('') || '';
+      return typeof title === 'string' ? title.trim().slice(0, 300) : '';
+    };
+    const candidate = (next, title) => validID(next) && next !== id ? {video_id: next, title: text(title)} : null;
+    // Prefer YouTube's explicit autoplay choice. Some TV responses expose only
+    // Replay here, but still provide an ordered shelf of related videos.
     const upNext = data.playerOverlays?.playerOverlayRenderer?.autoplay?.playerOverlayAutoplayRenderer;
-    const next = upNext?.videoId;
-    if (!validID(next) || next === id) throw new Error('YouTube has no next recommendation. Add another link to continue.');
-    const title = upNext.videoTitle?.simpleText || upNext.videoTitle?.runs?.map(run => run.text || '').join('') || '';
-    return {video_id: next, title: typeof title === 'string' ? title.trim().slice(0, 300) : ''};
+    const explicit = candidate(upNext?.videoId, upNext?.videoTitle);
+    if (explicit) return explicit;
+    const shelves = data.contents?.singleColumnWatchNextResults?.pivot?.sectionListRenderer?.contents;
+    for (const shelf of Array.isArray(shelves) ? shelves : []) {
+      const items = shelf?.shelfRenderer?.content?.horizontalListRenderer?.items;
+      for (const item of Array.isArray(items) ? items : []) {
+        const tile = item?.tileRenderer;
+        if (tile?.contentType !== 'TILE_CONTENT_TYPE_VIDEO') continue;
+        const next = candidate(tile.onSelectCommand?.watchEndpoint?.videoId, tile.metadata?.tileMetadataRenderer?.title);
+        if (next) return next;
+      }
+    }
+    throw new Error('Could not find a next video. Add another link to continue.');
   }
   async function tick() {
     const p = player();
@@ -109,17 +126,28 @@
       return;
     }
     const version = generation, attempt = `${id}:${version}`;
-    if (fetching || attempted === attempt) return;
-    attempted = attempt;
+    if (fetching) return;
+    if (attempted !== attempt) {
+      attempted = attempt;
+      attemptCount = 0;
+      retryAt = 0;
+    }
+    if (attemptCount > retryDelays.length || Date.now() < retryAt) return;
+    attemptCount++;
+    retryAt = 0;
     fetching = true;
     try {
       const next = await recommendation(id);
       if (version !== generation || !state.autoplay || state.items.length || videoID(p) !== id) return;
       suggested = next;
       suggestedFor = id;
+      error = '';
       if (p.getPlayerState() === 0) start(p, next.video_id);
     } catch (failure) {
-      if (version === generation) { error = failure.message || 'Autoplay is unavailable.'; }
+      if (version === generation && state.autoplay && !state.items.length && videoID(p) === id) {
+        if (attemptCount <= retryDelays.length) retryAt = Date.now() + retryDelays[attemptCount - 1];
+        else error = failure.message || 'Autoplay is unavailable.';
+      }
     } finally { fetching = false; }
   }
 
@@ -132,7 +160,7 @@
       return {queue_count: state.items.length, can_next: canNext(), can_previous: canPrevious(), navigation_pending: !!pending,
         queue: state.items.map(item => ({...item, starting: pending?.entryID === item.id})),
         recommendation: nextRecommendation(),
-        autoplay_pending: state.autoplay && !state.items.length && !!state.currentID && (!attempted || fetching),
+        autoplay_pending: state.autoplay && !state.items.length && !!state.currentID && !nextRecommendation() && (attempted !== `${state.currentID}:${generation}` || fetching || retryAt > 0),
         autoplay: state.autoplay, queue_error: error};
     },
     play(id) {
