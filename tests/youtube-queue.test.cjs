@@ -80,11 +80,20 @@ test('phone takeover clears the old queue and does not start recommendations', a
   assert.match(f.q.status().queue_error, /outside this panel/);
   assert.deepEqual(f.calls, []); assert.equal(f.requests.length, 0);
 });
-test('unavailable recommendations stop with feedback without retrying forever', async () => {
+test('unavailable recommendations retry with backoff, then stop with feedback', async () => {
   const f = fixture({fetch: async () => ({ok: true, json: async () => ({})})});
   f.q.setAutoplay(true); f.media(A, 0); await f.tick(); await f.tick();
   assert.equal(f.requests.length, 1); assert.deepEqual(f.calls, []);
-  assert.match(f.q.status().queue_error, /no next recommendation/);
+  assert.equal(f.q.status().autoplay_pending, true);
+  assert.equal(f.q.status().queue_error, '');
+  f.advance(4999); await f.tick(); assert.equal(f.requests.length, 1);
+  f.advance(1); await f.tick(); assert.equal(f.requests.length, 2);
+  f.advance(14999); await f.tick(); assert.equal(f.requests.length, 2);
+  f.advance(1); await f.tick(); assert.equal(f.requests.length, 3);
+  assert.equal(f.q.status().autoplay_pending, false);
+  assert.match(f.q.status().queue_error, /Could not find a next video/);
+  f.advance(60000); await f.tick(); assert.equal(f.requests.length, 3);
+  assert.deepEqual(f.calls, []);
 });
 test('failed video load retains the queue for an explicit retry', async () => {
   const f = fixture(); f.q.enqueue(B); f.media(A, 0); await f.tick();
@@ -263,4 +272,75 @@ test('stale or invalid reorder destinations leave the entire queue intact', () =
     assert.deepEqual(Array.from(f.q.status().queue, entry=>entry.id),ids);
   }
   assert.deepEqual(f.calls,[]);
+});
+
+// TV responses can contain a replay overlay and an ordered related-video shelf,
+// without playerOverlayAutoplayRenderer (observed on the live receiver).
+function relatedResponse(items, explicit) {
+  return {playerOverlays: {playerOverlayRenderer: explicit
+    ? {autoplay: {playerOverlayAutoplayRenderer: explicit}}
+    : {replay: {playerOverlayReplayRenderer: {navigationEndpoint: {watchEndpoint: {videoId: A}}}}}},
+    contents: {singleColumnWatchNextResults: {pivot: {sectionListRenderer: {contents: [
+      {shelfRenderer: {content: {horizontalListRenderer: {items}}}}
+    ]}}}}};
+}
+function relatedTile(id, title = 'Related title', contentType = 'TILE_CONTENT_TYPE_VIDEO') {
+  return {tileRenderer: {contentType, onSelectCommand: {watchEndpoint: {videoId: id}},
+    metadata: {tileMetadataRenderer: {title: {runs: [{text: title}]}}}}};
+}
+test('replay-only TV responses fall back to the first valid related video', async () => {
+  const data = relatedResponse([{}, relatedTile(A), relatedTile('invalid'),
+    relatedTile(B, 'Not a video', 'TILE_CONTENT_TYPE_PLAYLIST'), relatedTile(C), relatedTile(B)]);
+  const f = fixture({fetch: async () => ({ok: true, json: async () => data})});
+  f.q.setAutoplay(true); await f.tick();
+  assert.equal(f.q.status().recommendation.video_id, C);
+  assert.equal(f.q.status().recommendation.title, 'Related title');
+  assert.equal(f.q.status().queue_error, '');
+  assert.equal(f.q.status().autoplay_pending, false);
+  assert.deepEqual(f.calls, []);
+  f.media(A, 0); await f.tick(); assert.deepEqual(f.calls, [C]);
+});
+test('explicit autoplay selection takes priority over related videos', async () => {
+  const data = relatedResponse([relatedTile(C)], {videoId: B, videoTitle: {simpleText: 'Explicit next'}});
+  const f = fixture({fetch: async () => ({ok: true, json: async () => data})});
+  f.q.setAutoplay(true); await f.tick();
+  assert.equal(f.q.status().recommendation.video_id, B);
+  assert.equal(f.q.status().recommendation.title, 'Explicit next');
+});
+test('a temporary recommendation failure recovers without interrupting playback', async () => {
+  let attempts = 0;
+  const f = fixture({fetch: async () => {
+    if (++attempts === 1) throw new Error('Network unavailable');
+    return {ok: true, json: async () => relatedResponse([relatedTile(C)])};
+  }});
+  f.q.setAutoplay(true); await f.tick();
+  assert.equal(f.q.status().queue_error, '');
+  f.advance(5000); await f.tick();
+  assert.equal(f.q.status().recommendation.video_id, C);
+  assert.equal(f.q.status().autoplay_pending, false);
+  assert.deepEqual(f.calls, []);
+  f.advance(60000); await f.tick(); assert.equal(attempts, 2);
+});
+test('queue entries and disabling autoplay take precedence over scheduled retries', async () => {
+  for (const action of ['enqueue', 'off']) {
+    const f = fixture({fetch: async () => ({ok: false})});
+    f.q.setAutoplay(true); await f.tick();
+    if (action === 'enqueue') f.q.enqueue(B); else f.q.setAutoplay(false);
+    f.advance(5000); await f.tick();
+    assert.equal(f.requests.length, 1);
+    assert.equal(f.q.status().autoplay_pending, false);
+    assert.equal(f.q.status().queue_error, '');
+    f.media(A, 0); await f.tick();
+    assert.deepEqual(f.calls, action === 'enqueue' ? [B] : []);
+  }
+});
+test('a late related-video fallback cannot displace a newly queued video', async () => {
+  let resolve;
+  const f = fixture({fetch: () => new Promise(done => { resolve = done; })});
+  f.q.setAutoplay(true); f.media(A, 0); await f.tick();
+  f.q.enqueue(B);
+  resolve({ok: true, json: async () => relatedResponse([relatedTile(C)])});
+  await new Promise(setImmediate);
+  assert.equal(f.q.status().recommendation, null);
+  assert.deepEqual(f.calls, [B]);
 });
