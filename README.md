@@ -268,3 +268,11 @@ and `!!`/`!$`/`!*` history helpers. The prompt and helpers were copied from
 HomeServer revision `7b20a1d325651937afb0b9e9e338bb678a2921f5` and are managed by
 NixOS. Command history and credentials are not copied. Open a new SSH session
 after deployment to use the new login shell.
+
+### Player diagnostics and notifications
+
+The dashboard checks the actual DAC/equalizer outputs as well as service state. A player status badge opens the notification drawer with the observed failure and whether recovery is running, waiting, scheduled, disabled, or unknown. Receiver and recovery snapshots contain fixed diagnostic codes, expire when stale, and never expose raw journal output or browser/account data.
+
+Restart acceptance is shown as pending. Success requires a different systemd invocation and a responding player with healthy audio dependencies. Blocked or slow restarts remain visible and can still complete later. Restart tracking lasts ten minutes in the control-panel process; notification history is held only in the current browser page and clears on reload.
+
+Transient action errors, queue warnings, and recovery messages use fixed overlays and a notification bell, without inserting banners above controls. Repeated status polls update one incident, dismissed alerts stay dismissed until their state changes, and Clear history retains unresolved issues. No browser notification permission or external notification service is used.

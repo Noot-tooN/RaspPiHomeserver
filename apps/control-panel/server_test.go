@@ -196,7 +196,7 @@ func TestActionsErrorsAndRestartCooldown(t *testing.T) {
 
 func TestEmbeddedUIAndSecurityHeaders(t *testing.T) {
 	p := newPanel(fixtureController(), []string{"rasppi:8090"})
-	for _, path := range []string{"/", "/app.js", "/style.css"} {
+	for _, path := range []string{"/", "/app.js", "/notifications.js", "/style.css"} {
 		w := httptest.NewRecorder()
 		p.handler().ServeHTTP(w, httptest.NewRequest("GET", "http://rasppi:8090"+path, nil))
 		if w.Code != 200 || w.Body.Len() == 0 || w.Header().Get("X-Frame-Options") != "DENY" || w.Header().Get("Cache-Control") != "no-store" {

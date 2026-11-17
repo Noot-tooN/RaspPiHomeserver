@@ -17,14 +17,17 @@ in
       PULSE_SERVER = "unix:%t/pulse/native";
       PULSE_SINK = "rasppi-eq";
       PYTHONUNBUFFERED = "1";
+      RASPPI_STATUS_FILE = "%t/rasppi-youtube/status.json";
     };
     serviceConfig = {
-      ExecStart = "${pkgs.xvfb-run}/bin/xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' ${python}/bin/python ${../scripts/youtube_receiver.py} --browser ${pkgs.brave}/bin/brave --name-script ${../youtube/receiver-name.js} --queue-script ${../youtube/queue.js} --profile %h/.config/brave-youtube-tv";
+      ExecStart = "${pkgs.xvfb-run}/bin/xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' ${python}/bin/python ${../scripts}/youtube_receiver.py --browser ${pkgs.brave}/bin/brave --name-script ${../youtube/receiver-name.js} --queue-script ${../youtube/queue.js} --profile %h/.config/brave-youtube-tv";
       Restart = "always";
       RestartSec = 15;
       TimeoutStopSec = 15;
       KillMode = "control-group";
       UMask = "0077";
+      RuntimeDirectory = "rasppi-youtube";
+      RuntimeDirectoryPreserve = "yes";
     };
   };
 }

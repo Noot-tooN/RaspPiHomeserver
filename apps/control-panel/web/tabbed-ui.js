@@ -58,18 +58,18 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !infoTip.hidden) { infoTip.hidden = true; event.preventDefault(); }
 });
 
-const drawer = $('settings-drawer'), help = $('shortcut-help');
-for (const [dialog, openID, closeID] of [[drawer, 'open-settings', 'close-settings'], [help, 'open-help', 'close-help']]) {
-  $(openID).addEventListener('click', () => { dialog.showModal(); });
+const drawer = $('settings-drawer'), help = $('shortcut-help'), notificationDrawer = $('notifications-drawer');
+for (const [dialog, openID, closeID] of [[drawer, 'open-settings', 'close-settings'], [help, 'open-help', 'close-help'], [notificationDrawer, 'open-notifications', 'close-notifications']]) {
+  $(openID).addEventListener('click', () => { dialog.showModal(); notifications.mount(); });
   $(closeID).addEventListener('click', () => dialog.close());
-  dialog.addEventListener('close', () => $(openID).focus({preventScroll: true}));
+  dialog.addEventListener('close', () => { notifications.mount(); (dialog.returnFocus || $(openID)).focus({preventScroll: true}); dialog.returnFocus = null; });
   dialog.addEventListener('click', event => {
     const bounds = dialog.getBoundingClientRect();
     if (event.target === dialog && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) dialog.close();
   });
 }
 document.addEventListener('keydown', event => {
-  if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey || drawer.open || help.open || document.hidden) return;
+  if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey || drawer.open || help.open || notificationDrawer.open || document.hidden) return;
   if (event.target.closest('input, textarea, select, button, a, summary, [contenteditable], [role="slider"], [role="tab"]')) return;
   if (event.key.toLowerCase() === 'h' && !event.shiftKey) { event.preventDefault(); $('open-help').click(); return; }
   if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
@@ -109,3 +109,6 @@ function placePlaybackControls() {
 coverPlaybackLayout.addEventListener('change', placePlaybackControls);
 mobileArtworkLayout.addEventListener('change', placePlaybackControls);
 placePlaybackControls();
+
+for (const id of playerIDs) $(id + '-status').addEventListener('click', () => { notificationDrawer.returnFocus = $(id + '-status'); notificationDrawer.showModal(); notifications.mount(); });
+notifications.render();

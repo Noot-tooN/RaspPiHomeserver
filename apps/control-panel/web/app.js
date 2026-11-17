@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-let current = null, connected = false, busy = false, dragging = false, events = null, noticeTimer, staleTimer;
+let current = null, connected = false, busy = false, dragging = false, events = null, staleTimer;
 const playerDragging = new Set();
 const restartUntil = {spotify: 0, youtube: 0};
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -66,20 +66,7 @@ function hidePairing() {
 }
 
 function notice(message, error = false) {
-  clearTimeout(noticeTimer);
-  if ($('settings-drawer').open || !$('youtube-panel').hidden) {
-    const feedback = $($('settings-drawer').open ? 'settings-feedback' : 'youtube-action-feedback');
-    feedback.textContent = message;
-    feedback.title = message;
-    feedback.className = `action-feedback${error ? ' error' : ''}`;
-    feedback.hidden = false;
-    if (!error) noticeTimer = setTimeout(() => { feedback.hidden = true; }, 4000);
-    return;
-  }
-  $('notice').textContent = message;
-  $('notice').className = error ? 'notice error' : 'notice';
-  $('notice').hidden = false;
-  if (!error) noticeTimer = setTimeout(() => { $('notice').hidden = true; }, 5000);
+  notifications.put('action', {title: error ? 'Action failed' : 'Audio control', message, level: error ? 'error' : 'info', active: false, version: Date.now()});
 }
 
 function connection(online, label, quiet = false) {
@@ -139,7 +126,7 @@ function render() {
   }
   setIconButton($('mute'), audio?.muted ? 'volume-x' : 'volume-2', audio?.muted ? 'Unmute master output' : 'Mute master output');
   $('mute').setAttribute('aria-pressed', String(Boolean(audio?.muted)));
-  $('volume-note').textContent = audio && !audio.available ? (audio.error || 'Audio unavailable') : audio?.volume > 100 ? 'Saved volume is above 100%. This control sets 0–100%.' : '';
+  $('volume-note').textContent = audio?.volume > 100 ? 'Saved volume is above 100%. This control sets 0–100%.' : '';
   $('volume-note').hidden = !$('volume-note').textContent;
   $('volume-note').title = $('volume-note').textContent;
 
@@ -157,12 +144,21 @@ function render() {
       else if (service.active === 'failed') { label = 'Failed'; style = 'error'; detail = 'Open Settings to restart the service'; }
       else { label = 'Stopped'; detail = 'Open Settings to restart the service'; }
     } else { detail = service?.error || 'Service status unavailable'; }
+    const diagnostic = service?.diagnostic;
+    if (diagnostic) {
+      label = ({recovering: 'Recovering', scheduled: 'Retry scheduled', waiting: 'Waiting for audio', monitoring: 'Checking health', unknown: 'Needs attention', disabled: 'Recovery off'})[diagnostic.recovery] || 'Needs attention';
+      style = diagnostic.level === 'error' ? 'error' : 'warning';
+      detail = [diagnostic.summary && `${diagnostic.summary}.`, diagnostic.detail, diagnostic.recovery_detail].filter(Boolean).join(' ');
+    }
+    if (!connected && current) { label = 'Status stale'; style = 'neutral'; detail = 'Connection lost. Showing the last known status until fresh data arrives.'; }
+    $(id + '-status').title = detail;
+    $(id + '-status').setAttribute('aria-label', `${label}. ${detail} Open notifications for details.`);
     $(id + '-status').textContent = label;
     $(id + '-status').className = `badge ${style}`;
     $(id + '-status').style.visibility = ['Playing', 'Paused', 'Ready', 'Checking'].includes(label) ? 'hidden' : 'visible';
     $(id + '-status').hidden = ['Playing', 'Paused', 'Ready', 'Checking'].includes(label);
     $(id + '-detail').textContent = detail;
-    $(id + '-detail').hidden = !detail;
+    $(id + '-detail').hidden = true;
     $(id + '-detail').title = detail;
     setControlDisabled($(id + '-restart'), !connected || !service || Boolean(service.error) || Date.now() < restartUntil[id]);
   }
@@ -177,9 +173,6 @@ function render() {
   $('youtube-autoplay').setAttribute('aria-checked', String(Boolean(youtubePlayer?.autoplay)));
   setControlDisabled($('youtube-clearqueue'), !canLoad || !queueCount || !youtubePlayer.capabilities?.includes('clearqueue'));
   renderQueue(youtubePlayer, canLoad);
-  $('youtube-queue-error').textContent = youtubePlayer?.queue_error || '';
-  $('youtube-queue-error').title = youtubePlayer?.queue_error || '';
-  $('youtube-queue-error').hidden = !youtubePlayer?.queue_error;
   renderPairing();
   if (typeof renderShell === 'function') renderShell();
 }
@@ -204,7 +197,7 @@ function renderUpNext(id, player, available) {
     artist: queued ? (queued.starting ? 'Starting…' : 'From your queue') : 'YouTube recommendation'
   } : null;
   const pending = !next && Boolean(id === 'youtube' && player?.autoplay_pending);
-  const title = next?.title || (!player ? '' : !player.available ? 'Player unavailable'
+  const title = next?.title || (!player ? '' : !player.available ? (current?.services?.find(s => s.id === id)?.diagnostic?.summary || 'Player unavailable')
     : pending ? 'Finding a recommendation…' : 'Nothing up next');
   $(id + '-up-next').setAttribute('aria-busy', String(pending));
   $(id + '-up-next').dataset.empty = String(!next);
@@ -452,8 +445,8 @@ function renderPairing() {
   $('pairing-code').setAttribute('aria-label', valid ? `YouTube TV code ${pairingCode.split('').join(' ')}` : pairingBusy ? 'Getting YouTube TV code' : 'YouTube TV code not requested');
   $('pairing-result').setAttribute('aria-busy', String(pairingBusy));
   setControlDisabled($('youtube-pair'), !ready || pairingBusy || Date.now() < pairingRetryAt);
-  $('pairing-status').textContent = pairingBusy ? 'Getting your TV code…' : !ready ? 'YouTube must be connected and running to get a code.' : pairingError || 'YouTube on your phone → Cast → Link with TV code';
-  $('pairing-status').className = pairingError && !valid && !pairingBusy ? 'hint error' : 'hint';
+  $('pairing-status').textContent = pairingBusy ? 'Getting your TV code…' : !ready ? 'YouTube must be connected and running to get a code.' : 'YouTube on your phone → Cast → Link with TV code';
+  $('pairing-status').className = 'hint';
 }
 async function requestPairing() {
   const service = current?.services.find(s => s.id === 'youtube');
@@ -478,6 +471,7 @@ async function requestPairing() {
   } catch (error) {
     if (epoch !== pairingEpoch) return;
     pairingError = error.name === 'TimeoutError' ? 'YouTube took too long. Wait a moment and retry.' : error.message || 'Connection lost. Try again.';
+    notice(pairingError, true);
   } finally {
     pairingBusy = false; busy = false; render();
     setTimeout(render, Math.max(0, pairingRetryAt - Date.now()) + 50);
@@ -487,10 +481,6 @@ $('youtube-pair').addEventListener('click', requestPairing);
 
 async function change(path, payload, message) {
   if (busy || !connected) return false;
-  clearTimeout(noticeTimer);
-  $('youtube-action-feedback').hidden = true;
-  $('settings-feedback').hidden = true;
-  $('notice').hidden = true;
   busy = true; render();
   try {
     const response = await fetch(path, {
@@ -661,6 +651,7 @@ function connect(quiet = false) {
     try { current = JSON.parse(event.data); }
     catch { if (document.hidden) connected = false; else connection(false); return; }
     lastStateAt = Date.now();
+    notifications.sync(current);
     if (document.hidden) { connected = true; return; }
     watchStateFreshness();
     connection(true);

@@ -54,6 +54,7 @@ type playerState struct {
 	TrackID         string         `json:"track_id,omitempty"`
 	Capabilities    []string       `json:"capabilities"`
 	Error           string         `json:"error,omitempty"`
+	ErrorCode       string         `json:"error_code,omitempty"`
 }
 
 type playerAction struct {
@@ -219,6 +220,7 @@ func (c *systemController) spotify(ctx context.Context) (playerState, int) {
 	data, status, err := c.spotifyRequest(ctx, "GET", "/status", nil)
 	if err != nil {
 		state.Error = "Spotify player unavailable"
+		state.ErrorCode = "control_unavailable"
 		return state, 0
 	}
 	state.Available = true
@@ -276,10 +278,19 @@ func (c *systemController) youtube(ctx context.Context) playerState {
 	}
 	data, err := runWithTimeout(ctx, 4*time.Second, c.youtubeCommand, "state")
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			state.ErrorCode = "control_timeout"
+		}
 		return state
 	}
 	var result playerState
-	if json.Unmarshal(data, &result) != nil || result.ID != "youtube" || !result.Available {
+	if json.Unmarshal(data, &result) != nil || result.ID != "youtube" {
+		return state
+	}
+	if !result.Available {
+		if result.ErrorCode == "control_timeout" || result.ErrorCode == "control_unavailable" {
+			state.ErrorCode = result.ErrorCode
+		}
 		return state
 	}
 	if result.Active && strings.TrimSpace(result.Title) == "" {

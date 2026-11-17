@@ -76,6 +76,7 @@ func TestCommandsUseFixedArgumentsWithoutAShell(t *testing.T) {
 	expected := [][]string{
 		{"/nix/pactl", "set-sink-volume", "rasppi-dac", "0%"},
 		{"/nix/pactl", "set-sink-mute", "rasppi-dac", "0"},
+		{"/nix/systemctl", "--user", "show", "--property=InvocationID", "--value", "youtube-tv.service"},
 		{"/nix/systemctl", "--user", "--no-block", "restart", "youtube-tv.service"},
 	}
 	if !reflect.DeepEqual(calls, expected) {
@@ -86,7 +87,7 @@ func TestCommandsUseFixedArgumentsWithoutAShell(t *testing.T) {
 			t.Fatalf("accepted %q", id)
 		}
 	}
-	if c.Volume(ctx, -1) == nil || c.Volume(ctx, 101) == nil || len(calls) != 3 {
+	if c.Volume(ctx, -1) == nil || c.Volume(ctx, 101) == nil || len(calls) != 4 {
 		t.Fatal("invalid input reached runner")
 	}
 }

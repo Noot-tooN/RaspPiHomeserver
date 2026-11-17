@@ -126,15 +126,21 @@ in
   systemd.user.services.rasppi-audio-recovery = {
     description = "Recover audio outputs and receivers after dependency failures";
     unitConfig.ConditionUser = "pita";
-    environment.PULSE_SERVER = "unix:%t/pulse/native";
+    environment = {
+      PULSE_SERVER = "unix:%t/pulse/native";
+      RASPPI_STATUS_FILE = "%t/rasppi-audio-recovery/status.json";
+    };
     path = [
       pkgs.systemd
       pkgs.pulseaudio
     ];
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${pkgs.python3}/bin/python ${../scripts/audio_recovery.py}";
+      ExecStart = "${pkgs.python3}/bin/python ${../scripts}/audio_recovery.py";
       TimeoutStartSec = 20;
+      RuntimeDirectory = "rasppi-audio-recovery";
+      RuntimeDirectoryPreserve = "yes";
+      UMask = "0077";
     };
   };
   systemd.user.timers.rasppi-audio-recovery = {
