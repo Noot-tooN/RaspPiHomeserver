@@ -37,6 +37,7 @@ const notifications = (() => {
       const oldest = [...entries.values()].filter(item => !item.active).sort((a, b) => a.order - b.order)[0];
       if (!oldest) break;
       clearTimeout(timers.get(oldest.key)); timers.delete(oldest.key); entries.delete(oldest.key);
+      if (oldest.key.startsWith('action:')) seen.delete(oldest.key);
     }
     $n('notification-announcement').textContent = `${entry.title}. ${entry.message}`;
     render();
@@ -113,7 +114,7 @@ const notifications = (() => {
     for (const [key, entry] of entries) if (key.startsWith('health:') && entry.active && !present.has(key)) resolve(key, 'The player and its audio dependencies are responding again.');
   }
   $n('clear-notifications').addEventListener('click', () => {
-    for (const [key, entry] of entries) if (!entry.active) { entries.delete(key); clearTimeout(timers.get(key)); timers.delete(key); }
+    for (const [key, entry] of entries) if (!entry.active) { entries.delete(key); if (key.startsWith('action:')) seen.delete(key); clearTimeout(timers.get(key)); timers.delete(key); }
     render();
   });
   return {put, resolve, sync, mount, render};

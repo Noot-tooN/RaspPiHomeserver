@@ -65,8 +65,9 @@ function hidePairing() {
   renderPairing();
 }
 
+let notificationSequence = 0;
 function notice(message, error = false) {
-  notifications.put('action', {title: error ? 'Action failed' : 'Audio control', message, level: error ? 'error' : 'info', active: false, version: Date.now()});
+  notifications.put(`action:${++notificationSequence}`, {title: error ? 'Action failed' : 'Audio control', message, level: error ? 'error' : 'info', active: false, version: Date.now()});
 }
 
 function connection(online, label, quiet = false) {

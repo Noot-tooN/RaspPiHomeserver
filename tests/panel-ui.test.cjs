@@ -1044,3 +1044,14 @@ test('notification drawer suspends shortcuts and status details return focus to 
   assert.equal(vm.runInContext('document.activeElement.id',page.context),'youtube-status');
   assert.equal(page.element('notification-toasts').parentNode,page.element('body'));
 });
+test('distinct actions retain bounded history and clearing keeps unresolved service issues', () => {
+  const page=ui(true),state=snapshot();
+  state.services[0].diagnostic={scope:'spotify',code:'service_failed',summary:'Spotify stopped',recovery:'scheduled'};
+  page.receive(state);
+  vm.runInContext("for (let i=0;i<40;i++) notice('Action '+i, true)",page.context);
+  assert.equal(page.element('notification-list').children.length,30);
+  assert.equal(page.element('notification-toasts').children.length,3);
+  page.element('clear-notifications').click();
+  assert.equal(page.element('notification-list').children.length,1);
+  assert.match(page.element('notification-list').children[0].children[1].textContent,/Spotify stopped/);
+});
