@@ -87,7 +87,10 @@ in
 {
   systemd.user.services.rasppi-equalizer = {
     description = "Shared ten-band equalizer for Spotify and YouTube";
-    unitConfig.ConditionUser = "pita";
+    unitConfig = {
+      ConditionUser = "pita";
+      StartLimitIntervalSec = 0;
+    };
     after = [ "pipewire.service" ];
     requires = [ "pipewire.service" ];
     partOf = [ "pipewire.service" ];

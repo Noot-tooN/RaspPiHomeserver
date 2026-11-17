@@ -52,6 +52,7 @@ class ReceiverTabTests(unittest.IsolatedAsyncioTestCase):
             ("Page.enable", {}),
             ("Page.addScriptToEvaluateOnNewDocument", {"source": "name override"}),
             ("Page.navigate", {"url": TV_URL}),
+            ("Page.disable", {}),
         ])
 
     async def test_queue_is_installed_before_navigation_and_survives_page_reload(self):
@@ -62,6 +63,7 @@ class ReceiverTabTests(unittest.IsolatedAsyncioTestCase):
             ("Page.addScriptToEvaluateOnNewDocument", {"source": "name override"}),
             ("Page.addScriptToEvaluateOnNewDocument", {"source": "queue runtime"}),
             ("Page.navigate", {"url": TV_URL}),
+            ("Page.disable", {}),
         ])
 
     async def test_late_restored_tab_closes_without_reloading_owned_page(self):

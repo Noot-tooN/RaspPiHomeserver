@@ -24,28 +24,36 @@ HEALTH_EXPRESSION = """JSON.stringify({
 })"""
 
 
+class CDPTimeout(TimeoutError):
+    """A fixed command name is safe to log; page data and responses aren't."""
+
+
 class CDP:
     """Drain unsolicited events while matching responses to our command IDs."""
 
-    def __init__(self, socket):
+    def __init__(self, socket, timeout=15):
         self.socket = socket
         self.sequence = 0
+        self.timeout = timeout
 
     async def call(self, method, params=None):
         self.sequence += 1
         request_id = self.sequence
-        await self.socket.send(json.dumps({
-            "id": request_id, "method": method, "params": params or {},
-        }))
-        async with asyncio.timeout(15):
-            while True:
-                message = json.loads(await self.socket.recv())
-                if message.get("id") != request_id:
-                    continue
-                if "error" in message:
-                    # Avoid logging server responses that could contain account data.
-                    raise RuntimeError(f"Browser command failed: {method}")
-                return message.get("result", {})
+        try:
+            async with asyncio.timeout(self.timeout):
+                await self.socket.send(json.dumps({
+                    "id": request_id, "method": method, "params": params or {},
+                }))
+                while True:
+                    message = json.loads(await self.socket.recv())
+                    if message.get("id") != request_id:
+                        continue
+                    if "error" in message:
+                        # Avoid logging server responses that could contain account data.
+                        raise RuntimeError(f"Browser command failed: {method}")
+                    return message.get("result", {})
+        except TimeoutError as error:
+            raise CDPTimeout(f"Browser command timed out: {method}") from error
 
 
 def health_failure(state):
@@ -106,6 +114,39 @@ async def initialize_receiver(cdp, name_script, queue_script=None):
         await cdp.call("Page.addScriptToEvaluateOnNewDocument", {"source": queue_script})
     # This order is essential: attach while blank, inject, THEN navigate.
     await cdp.call("Page.navigate", {"url": TV_URL})
+    # No Page events are used by the monitor. Stop subscribing before its
+    # 30-second sleeps so navigation events cannot fill the WebSocket queue.
+    await cdp.call("Page.disable")
+
+
+async def monitor_receiver(browser, cdp, target_id, process):
+    failures = 0
+    while True:
+        await asyncio.sleep(30)
+        if process.returncode is not None:
+            raise RuntimeError("Browser exited")
+        try:
+            await close_other_pages(browser, target_id)
+            result = await cdp.call("Runtime.evaluate", {
+                "expression": HEALTH_EXPRESSION, "returnByValue": True,
+            })
+            state = json.loads(result.get("result", {}).get("value", "{}"))
+            reason = health_failure(state)
+        except CDPTimeout:
+            # A busy Pi can miss one command deadline during startup/updates.
+            # Count it like any other failed check instead of killing the page
+            # immediately and forcing another expensive browser startup.
+            reason = "browser-command-timeout"
+        if reason is None:
+            if failures:
+                print("YouTube receiver: health check recovered", file=sys.stderr, flush=True)
+            failures = 0
+        else:
+            failures += 1
+            print(f"YouTube receiver: health check {failures}/3: {reason}",
+                  file=sys.stderr, flush=True)
+        if failures >= 3:
+            raise RuntimeError("YouTube page failed three consecutive health checks")
 
 
 async def supervise(args):
@@ -131,38 +172,18 @@ async def supervise(args):
             raise RuntimeError("Browser debugging endpoint did not become ready")
 
         async with websockets.connect(browser_url) as browser_socket:
-            browser = CDP(browser_socket)
+            # Cold browser startup after an update is slower than steady-state
+            # commands on this 2 GB Pi. Keep it bounded, with a separate budget.
+            browser = CDP(browser_socket, timeout=60)
             target_id = await create_receiver_page(browser)
             tab = await asyncio.to_thread(get_tab, target_id)
             async with websockets.connect(
                 tab["webSocketDebuggerUrl"], max_size=8 * 1024 * 1024, max_queue=256,
             ) as socket:
-                cdp = CDP(socket)
+                cdp = CDP(socket, timeout=60)
                 await initialize_receiver(cdp, Path(args.name_script).read_text(), Path(args.queue_script).read_text() if args.queue_script else None)
-                failures = 0
-                while True:
-                    await asyncio.sleep(30)
-                    if process.returncode is not None:
-                        raise RuntimeError("Browser exited")
-                    # Also remove pages restored late or opened by the TV UI.
-                    await close_other_pages(browser, target_id)
-                    result = await cdp.call("Runtime.evaluate", {
-                        "expression": HEALTH_EXPRESSION, "returnByValue": True,
-                    })
-                    state = json.loads(result.get("result", {}).get("value", "{}"))
-                    reason = health_failure(state)
-                    if reason is None:
-                        if failures:
-                            print("YouTube receiver: health check recovered", file=sys.stderr, flush=True)
-                        failures = 0
-                    else:
-                        failures += 1
-                        # Fixed categories only: never log page text, media URLs,
-                        # video titles, account details, or pairing codes.
-                        print(f"YouTube receiver: health check {failures}/3: {reason}",
-                              file=sys.stderr, flush=True)
-                    if failures >= 3:
-                        raise RuntimeError("YouTube page failed three consecutive health checks")
+                browser.timeout = cdp.timeout = 15
+                await monitor_receiver(browser, cdp, target_id, process)
     finally:
         if process.returncode is None:
             process.terminate()
@@ -192,6 +213,6 @@ if __name__ == "__main__":
         pass
     except Exception as error:
         # Known errors are fixed messages; unexpected exceptions log only their type.
-        message = str(error) if isinstance(error, RuntimeError) else type(error).__name__
+        message = str(error) if isinstance(error, (RuntimeError, CDPTimeout)) else type(error).__name__
         print(f"YouTube receiver: {message}", file=sys.stderr)
         sys.exit(1)

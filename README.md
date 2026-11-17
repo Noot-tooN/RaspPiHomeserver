@@ -238,6 +238,26 @@ Revert/fix the Git commit and restart Comin when ready. Kernel/firmware activati
 
 The YouTube monitor detects empty documents, browser errors and a missing name hook. It does not prove playback works or that YouTube's remote casting service is healthy. YouTube's website is fetched at runtime and can change independently of the pinned OS.
 
+The audio recovery timer checks every 15 seconds. Once the DAC is initialized,
+it restarts missing audio backends, replaces an equalizer that has been running
+for 30 seconds without its output, and retries receiver starts blocked by failed
+dependencies. Healthy players are left running. The DAC readiness marker survives
+service stops during updates but is cleared at boot and before a new mixer
+restore. This avoids waiting for the system mixer while NixOS is still activating
+user services. To deliberately keep the receivers stopped for maintenance, stop
+`rasppi-audio-recovery.timer` first and start it again afterward.
+
+YouTube allows up to 60 seconds per browser command during cold startup. During
+normal monitoring, a command timeout counts toward the same three consecutive
+failed checks as an unhealthy page; one slow response no longer restarts the
+browser. A successful check clears the failure count. Startup timeout logs name
+the command, without including page or account data.
+
+```sh
+systemctl --user status rasppi-audio-recovery.timer
+journalctl --user -u rasppi-audio-recovery -u youtube-tv -b
+```
+
 ## SSH shell
 
 `pita` uses Fish with HomeServer's Starship prompt, green command highlighting,
