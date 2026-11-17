@@ -61,6 +61,7 @@ in
     description = "Restore the audited DAC Pro mixer state";
     wantedBy = [ "multi-user.target" ];
     after = [ "sound.target" ];
+    unitConfig.StartLimitIntervalSec = 0;
     path = [
       pkgs.alsa-utils
       pkgs.coreutils
@@ -70,7 +71,14 @@ in
       RemainAfterExit = true;
       RuntimeDirectory = "rasppi-dac";
       RuntimeDirectoryMode = "0755";
+      # Stopping the mixer does not undo its hardware settings. NixOS restarts
+      # user units before restarting this system unit; retain readiness across
+      # that gap. /run still clears it on every boot, and ExecStart invalidates
+      # it before attempting to restore the mixer again.
+      RuntimeDirectoryPreserve = "yes";
       TimeoutStartSec = 100;
+      Restart = "on-failure";
+      RestartSec = 10;
     };
     script = ''
       rm -f /run/rasppi-dac/ready
@@ -99,13 +107,44 @@ in
       "pipewire-pulse.service"
       "wireplumber.service"
     ];
-    unitConfig.ConditionUser = "pita";
+    unitConfig = {
+      ConditionUser = "pita";
+      StartLimitIntervalSec = 0;
+    };
     environment.PULSE_SERVER = "unix:%t/pulse/native";
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
       ExecStart = "${ready}/bin/rasppi-audio-ready";
       TimeoutStartSec = 100;
+    };
+  };
+
+  # Restart=always does not retry a unit whose start job failed because of a
+  # dependency. Probe actual sinks as well as service states and retry those
+  # jobs without blocking system activation or disturbing healthy playback.
+  systemd.user.services.rasppi-audio-recovery = {
+    description = "Recover audio outputs and receivers after dependency failures";
+    unitConfig.ConditionUser = "pita";
+    environment.PULSE_SERVER = "unix:%t/pulse/native";
+    path = [
+      pkgs.systemd
+      pkgs.pulseaudio
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.python3}/bin/python ${../scripts/audio_recovery.py}";
+      TimeoutStartSec = 20;
+    };
+  };
+  systemd.user.timers.rasppi-audio-recovery = {
+    description = "Check audio output and receiver recovery";
+    wantedBy = [ "timers.target" ];
+    unitConfig.ConditionUser = "pita";
+    timerConfig = {
+      OnBootSec = "30s";
+      OnUnitInactiveSec = "15s";
+      AccuracySec = "1s";
     };
   };
 }

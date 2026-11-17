@@ -69,6 +69,22 @@ let
   );
   start = pkgs.writeShellScript "start-equalizer" ''
     set -eu
+    # PipeWire's Type=simple unit is active before it accepts clients. Starting
+    # a filter at that point can leave a live process with no sink. Wait for
+    # the real DAC output, not just the daemon process, before connecting.
+    ready=0
+    for _ in $(${pkgs.coreutils}/bin/seq 1 15); do
+      if ${pkgs.coreutils}/bin/timeout 3 ${pkgs.pulseaudio}/bin/pactl list short sinks |
+         ${pkgs.gawk}/bin/awk '$2 == "rasppi-dac" { found=1 } END { exit !found }'; then
+        ready=1
+        break
+      fi
+      ${pkgs.coreutils}/bin/sleep 1
+    done
+    if [ "$ready" != 1 ]; then
+      echo "Waiting for PipeWire DAC output before starting the equalizer" >&2
+      exit 1
+    fi
     export PIPEWIRE_CONFIG_DIR="$RUNTIME_DIRECTORY"
     ${pkgs.coreutils}/bin/mkdir -p "$RUNTIME_DIRECTORY/filter-chain.conf.d"
     ${pkgs.coreutils}/bin/cp ${pkgs.pipewire}/share/pipewire/filter-chain.conf "$RUNTIME_DIRECTORY/"
@@ -87,11 +103,23 @@ in
 {
   systemd.user.services.rasppi-equalizer = {
     description = "Shared ten-band equalizer for Spotify and YouTube";
-    unitConfig.ConditionUser = "pita";
-    after = [ "pipewire.service" ];
+    unitConfig = {
+      ConditionUser = "pita";
+      StartLimitIntervalSec = 0;
+    };
+    wants = [
+      "pipewire-pulse.service"
+      "wireplumber.service"
+    ];
+    after = [
+      "pipewire.service"
+      "pipewire-pulse.service"
+      "wireplumber.service"
+    ];
     requires = [ "pipewire.service" ];
     partOf = [ "pipewire.service" ];
     wantedBy = [ "default.target" ];
+    environment.PULSE_SERVER = "unix:%t/pulse/native";
     serviceConfig = {
       ExecStart = start;
       Restart = "always";
