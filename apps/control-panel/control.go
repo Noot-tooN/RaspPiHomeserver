@@ -15,20 +15,23 @@ import (
 )
 
 type audioState struct {
-	Available bool   `json:"available"`
-	Volume    int    `json:"volume"`
-	Muted     bool   `json:"muted"`
-	Error     string `json:"error,omitempty"`
+	sinksKnown, dacPresent, equalizerPresent bool
+	Available                                bool   `json:"available"`
+	Volume                                   int    `json:"volume"`
+	Muted                                    bool   `json:"muted"`
+	Error                                    string `json:"error,omitempty"`
 }
 
 type serviceState struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Load   string `json:"load"`
-	Active string `json:"active"`
-	Sub    string `json:"sub"`
-	Result string `json:"result"`
-	Error  string `json:"error,omitempty"`
+	Diagnostic *diagnostic    `json:"diagnostic,omitempty"`
+	Restart    *restartStatus `json:"restart,omitempty"`
+	ID         string         `json:"id"`
+	Name       string         `json:"name"`
+	Load       string         `json:"load"`
+	Active     string         `json:"active"`
+	Sub        string         `json:"sub"`
+	Result     string         `json:"result"`
+	Error      string         `json:"error,omitempty"`
 }
 
 type state struct {
@@ -91,12 +94,18 @@ func runWithTimeout(ctx context.Context, timeout time.Duration, name string, arg
 	cmd.Stdout = &output
 	cmd.WaitDelay = time.Second
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, err
 	}
 	return output.Bytes(), nil
 }
 
 type systemController struct {
+	runtimeDir                 string
+	restartMu                  sync.Mutex
+	restarts                   map[string]*restartRequest
 	spotifyRestore             spotifyVolumeMemory
 	youtubeTitles              youtubeTitleCache
 	pactl, systemctl, sink     string
@@ -124,14 +133,21 @@ func (c *systemController) State(ctx context.Context) state {
 	// Independent, bounded reads run together; one slow receiver cannot delay
 	// the master-volume and service checks by the sum of all timeouts.
 	var result state
+	var userUnits, systemUnits unitStates
 	result.Players = make([]playerState, 2)
 	var wait sync.WaitGroup
-	wait.Add(4)
+	wait.Add(5)
 	go func() { defer wait.Done(); result.Audio = c.audio(ctx) }()
-	go func() { defer wait.Done(); result.Services = c.serviceStates(ctx) }()
+	go func() {
+		defer wait.Done()
+		userUnits = c.readUnits(ctx, true, diagnosticUnits...)
+		result.Services = serviceStatesFrom(userUnits)
+	}()
+	go func() { defer wait.Done(); systemUnits = c.readUnits(ctx, false, "rasppi-dac-mixer.service") }()
 	go func() { defer wait.Done(); result.Players[0], _ = c.spotify(ctx) }()
 	go func() { defer wait.Done(); result.Players[1] = c.youtube(ctx) }()
 	wait.Wait()
+	c.diagnose(&result, userUnits, systemUnits)
 	return result
 }
 
@@ -150,12 +166,22 @@ func (c *systemController) audio(ctx context.Context) audioState {
 	if json.Unmarshal(data, &sinks) != nil {
 		return audioState{Error: "Could not read audio state"}
 	}
+	result := audioState{sinksKnown: true}
+	for _, sink := range sinks {
+		if sink.Name == "rasppi-eq" {
+			result.equalizerPresent = true
+		}
+		if sink.Name == c.sink {
+			result.dacPresent = true
+		}
+	}
 	for _, sink := range sinks {
 		if sink.Name != c.sink {
 			continue
 		}
 		if len(sink.Volume) == 0 {
-			return audioState{Error: "DAC volume unavailable"}
+			result.Error = "DAC volume unavailable"
+			return result
 		}
 		// Show the loudest channel, like a master fader. pactl's raw volume
 		// uses 65536 for 100%, not a linear-amplitude percentage.
@@ -163,33 +189,19 @@ func (c *systemController) audio(ctx context.Context) audioState {
 		for _, channel := range sink.Volume {
 			maximum = max(maximum, channel.Value)
 		}
-		return audioState{Available: true, Volume: int(math.Round(float64(maximum) * 100 / 65536)), Muted: sink.Mute}
+		result.Available, result.Volume, result.Muted = true, int(math.Round(float64(maximum)*100/65536)), sink.Mute
+		return result
 	}
-	return audioState{Error: "Waiting for DAC Pro"}
+	result.Error = "Waiting for DAC Pro"
+	return result
 }
 
-func (c *systemController) serviceStates(ctx context.Context) []serviceState {
-	args := []string{"--user", "show", "--no-pager", "--property=Id,LoadState,ActiveState,SubState,Result"}
-	for _, service := range services {
-		args = append(args, service.unit)
-	}
-	data, err := c.run(ctx, c.systemctl, args...)
-	units := make(map[string]map[string]string)
-	for _, block := range strings.Split(strings.TrimSpace(string(data)), "\n\n") {
-		properties := make(map[string]string)
-		for _, line := range strings.Split(block, "\n") {
-			key, value, ok := strings.Cut(line, "=")
-			if ok {
-				properties[key] = value
-			}
-		}
-		units[properties["Id"]] = properties
-	}
+func serviceStatesFrom(units unitStates) []serviceState {
 	result := make([]serviceState, 0, len(services))
 	for _, service := range services {
 		p := units[service.unit]
 		s := serviceState{ID: service.id, Name: service.name, Load: p["LoadState"], Active: p["ActiveState"], Sub: p["SubState"], Result: p["Result"]}
-		if err != nil || s.Load == "" || s.Active == "" {
+		if s.Load == "" || s.Active == "" {
 			s.Error = "Service status unavailable"
 		} else if s.Load != "loaded" {
 			s.Error = "Service not loaded"
@@ -221,8 +233,20 @@ func (c *systemController) Restart(ctx context.Context, id string) error {
 	if !ok {
 		return errors.New("unknown service")
 	}
+	before, err := c.run(ctx, c.systemctl, "--user", "show", "--property=InvocationID", "--value", unit)
+	if err != nil {
+		return err
+	}
 	// Queue the restart without keeping an HTTP request open while YouTube
 	// shuts down. The next status snapshot reports the actual service state.
-	_, err := c.run(ctx, c.systemctl, "--user", "--no-block", "restart", unit)
+	_, err = c.run(ctx, c.systemctl, "--user", "--no-block", "restart", unit)
+	if err == nil {
+		c.restartMu.Lock()
+		if c.restarts == nil {
+			c.restarts = make(map[string]*restartRequest)
+		}
+		c.restarts[id] = &restartRequest{RequestedAt: time.Now().UnixMilli(), PreviousInvocation: strings.TrimSpace(string(before))}
+		c.restartMu.Unlock()
+	}
 	return err
 }

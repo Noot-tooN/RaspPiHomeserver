@@ -73,6 +73,7 @@ func main() {
 		}
 	}
 	control := &systemController{pactl: *pactl, systemctl: *systemctl, sink: *sink, pairingCommand: *pairing, youtubeCommand: *youtubeControl, spotifyURL: "http://127.0.0.1:3678", run: runCommand}
+	control.runtimeDir = os.Getenv("XDG_RUNTIME_DIR")
 	control.spotifyRestore.load(*stateDir)
 	p := newPanel(control, authorities)
 	if *stateDir != "" {

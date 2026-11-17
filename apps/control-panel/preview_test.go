@@ -143,6 +143,23 @@ func TestPreview(t *testing.T) {
 	}()
 	go p.monitor(ctx)
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /__test/diagnostic/{mode}", func(w http.ResponseWriter, r *http.Request) {
+		c.mu.Lock()
+		for i := range c.state.Services {
+			service := &c.state.Services[i]
+			service.Active = "active"
+			c.state.Players[i].Available = true
+			service.Diagnostic, service.Restart = nil, nil
+			if r.PathValue("mode") != "healthy" {
+				service.Diagnostic = &diagnostic{Scope: "audio", Code: "equalizer_missing", Level: "warning", Summary: "Equalizer output is missing", Detail: "The equalizer process is running, but it has no playback output. Both players depend on that output.", Recovery: "recovering", RecoveryDetail: "Restarting the equalizer because its playback output is missing."}
+				c.state.Players[i].Available = false
+				service.Restart = &restartStatus{RequestedAt: 123, Status: "blocked", Message: "Restart has not completed. Equalizer output is missing. Automatic recovery is running."}
+			}
+		}
+		c.mu.Unlock()
+		p.refresh()
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /__test/unavailable", func(w http.ResponseWriter, _ *http.Request) {
 		c.mu.Lock()
 		c.state.Audio = audioState{Error: "Waiting for DAC Pro"}

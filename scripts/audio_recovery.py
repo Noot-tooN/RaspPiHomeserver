@@ -3,6 +3,7 @@
 import subprocess
 import time
 from pathlib import Path
+from service_status import publish
 
 BACKENDS = ("pipewire", "pipewire-pulse", "wireplumber", "rasppi-equalizer")
 PLAYERS = ("rasppi-audio-ready", "spotify", "youtube-tv")
@@ -17,6 +18,7 @@ def recover():
     # The mixer may be stopped during activation. Never start playback on a
     # fresh boot before it has initialized the physical DAC at least once.
     if not Path("/run/rasppi-dac/ready").exists():
+        publish("waiting", "dac_initializing")
         return
     output = run("systemctl", "--user", "show",
                  "--property=Id,ActiveState,ActiveEnterTimestampMonotonic",
@@ -28,6 +30,7 @@ def recover():
     # Let backends finish restarting. The readiness service may be waiting for
     # a missing sink, so its activating state must not prevent repairing it.
     if any(states[name]["ActiveState"] in TRANSITIONAL for name in BACKENDS):
+        publish("recovering", "backends_starting")
         return
 
     def start_missing(names):
@@ -38,10 +41,12 @@ def recover():
         return bool(missing)
 
     if start_missing(BACKENDS):
+        publish("recovering", "backends_starting")
         return
     sinks = {line.split()[1] for line in run("pactl", "list", "short", "sinks").splitlines()
              if len(line.split()) >= 2}
     if "rasppi-dac" not in sinks:
+        publish("waiting", "dac_missing")
         return
     if "rasppi-eq" not in sinks:
         # A live filter process can have no registered sink after PipeWire
@@ -50,18 +55,26 @@ def recover():
         if time.monotonic() - started >= 30:
             print("Recovering equalizer: playback sink is missing", flush=True)
             run("systemctl", "--user", "--no-block", "restart", "rasppi-equalizer.service")
+            publish("recovering", "equalizer_restarting")
+        else:
+            publish("waiting", "equalizer_starting")
         return
     # Do not replace a user-requested player restart once audio is healthy.
     if any(states[name]["ActiveState"] in TRANSITIONAL for name in PLAYERS):
+        publish("recovering", "players_starting")
         return
     if start_missing(PLAYERS):
         print("Recovering audio readiness and stopped receivers", flush=True)
+        publish("recovering", "players_starting")
+    else:
+        publish("healthy", "healthy")
 
 
 if __name__ == "__main__":
     try:
         recover()
     except (OSError, subprocess.SubprocessError, KeyError, ValueError) as error:
+        publish("failed", "recovery_probe_failed")
         # A bounded failed probe is retried by the timer, not a reason to restart
         # healthy receivers. Avoid printing command output or account data.
         raise SystemExit(f"Audio recovery probe failed: {type(error).__name__}")

@@ -9,6 +9,7 @@ import urllib.request
 from pathlib import Path
 
 import websockets
+from service_status import publish
 
 TV_URL = "https://www.youtube.com/tv"
 USER_AGENT = (
@@ -141,8 +142,10 @@ async def monitor_receiver(browser, cdp, target_id, process):
             if failures:
                 print("YouTube receiver: health check recovered", file=sys.stderr, flush=True)
             failures = 0
+            publish("healthy", "healthy")
         else:
             failures += 1
+            publish("unhealthy", reason, failures)
             print(f"YouTube receiver: health check {failures}/3: {reason}",
                   file=sys.stderr, flush=True)
         if failures >= 3:
@@ -150,6 +153,7 @@ async def monitor_receiver(browser, cdp, target_id, process):
 
 
 async def supervise(args):
+    publish("starting", "browser_starting")
     process = await asyncio.create_subprocess_exec(
         args.browser,
         f"--user-data-dir={args.profile}",
@@ -172,6 +176,7 @@ async def supervise(args):
             raise RuntimeError("Browser debugging endpoint did not become ready")
 
         async with websockets.connect(browser_url) as browser_socket:
+            publish("starting", "page_loading")
             # Cold browser startup after an update is slower than steady-state
             # commands on this 2 GB Pi. Keep it bounded, with a separate budget.
             browser = CDP(browser_socket, timeout=60)
@@ -183,6 +188,7 @@ async def supervise(args):
                 cdp = CDP(socket, timeout=60)
                 await initialize_receiver(cdp, Path(args.name_script).read_text(), Path(args.queue_script).read_text() if args.queue_script else None)
                 browser.timeout = cdp.timeout = 15
+                publish("starting", "page_loading")
                 await monitor_receiver(browser, cdp, target_id, process)
     finally:
         if process.returncode is None:
@@ -212,6 +218,17 @@ if __name__ == "__main__":
     except (asyncio.CancelledError, KeyboardInterrupt):
         pass
     except Exception as error:
+        if isinstance(error, CDPTimeout):
+            code = "browser-command-timeout"
+        elif str(error) == "YouTube page failed three consecutive health checks":
+            code = "health_checks_failed"
+        elif str(error) == "Browser debugging endpoint did not become ready":
+            code = "browser_endpoint_timeout"
+        elif str(error) in ("Browser exited", "Browser exited during startup"):
+            code = "browser_exited"
+        else:
+            code = "receiver_failed"
+        publish("failed", code)
         # Known errors are fixed messages; unexpected exceptions log only their type.
         message = str(error) if isinstance(error, (RuntimeError, CDPTimeout)) else type(error).__name__
         print(f"YouTube receiver: {message}", file=sys.stderr)

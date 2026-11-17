@@ -36,6 +36,7 @@ function ui(shell = false, visualizer = false, storage) {
     hidden: false, getElementById: element, createElement: () => element(Symbol()),
     querySelector: element, querySelectorAll: () => [], addEventListener(name, fn) { (listeners[name] ||= []).push(fn); }
   };
+  document.body = element('body');
   class EventSource {
     constructor(url) { this.url = url; this.handlers = {}; sources.push(this); }
     addEventListener(name, fn) { this.handlers[name] = fn; }
@@ -48,8 +49,9 @@ function ui(shell = false, visualizer = false, storage) {
   });
   const web = process.env.PANEL_WEB_DIR || path.join(__dirname, '../apps/control-panel/web');
   for (const id of ['spotify', 'youtube']) element(id + '-ready').hidden = true;
-  for (const name of ['player-ui.js', 'app.js', ...(shell ? ['tabbed-ui.js'] : [])]) vm.runInContext(fs.readFileSync(path.join(web, name), 'utf8'), context);
+  for (const name of ['player-ui.js', 'notifications.js', 'app.js', ...(shell ? ['tabbed-ui.js'] : [])]) vm.runInContext(fs.readFileSync(path.join(web, name), 'utf8'), context);
   return {element, sources, context,
+    toast() { return element('notification-toasts').children[0]?.children[1].textContent || ''; },
     flushDelay(delay) { for (const [id, timer] of [...timers]) if (timer.delay === delay) { timers.delete(id); timer.fn(); } },
     key(key, options = {}) { const event = {key, code: key === ' ' ? 'Space' : key, target: {closest: () => false}, preventDefault() { this.defaultPrevented = true; }, ...options}; for (const fn of listeners.keydown || []) fn(event); return event; },
     advance(ms) { now += ms; },
@@ -141,7 +143,7 @@ test('disconnect reports once and late events from a closed stream cannot change
   page.sources.at(-1).onerror();
   assert.equal(page.element('connection-text').textContent, 'Reconnecting');
   assert.equal(page.element('volume-note').textContent, '');
-  assert.equal(page.element('spotify-status').textContent, 'Playing');
+  assert.equal(page.element('spotify-status').textContent, 'Status stale');
   assert.equal(page.element('spotify-volume').value, 65);
   assert.equal(page.element('youtube-volume').disabled, true);
 });
@@ -249,10 +251,10 @@ test('queue composer remains visible independently of phone-link help and player
   assert.equal(page.element('pairing-info-tip').hidden, true);
   assert.equal(page.element('youtube-link-form').hidden, false);
   vm.runInContext("notice('Invalid link', true)", page.context);
-  assert.equal(page.element('youtube-action-feedback').textContent, 'Invalid link');
+  assert.equal(page.toast(), 'Invalid link');
   page.element('spotify-tab').click();
   vm.runInContext("notice('Spotify feedback')", page.context);
-  assert.equal(page.element('notice').textContent, 'Spotify feedback');
+  assert.equal(page.toast(), 'Spotify feedback');
   page.element('youtube-tab').click();
 });
 
@@ -298,7 +300,8 @@ test('pairing failure offers a bounded retry; info focus never requests a code',
   assert.equal(requests, 0);
   await page.element('youtube-pair').handlers.click[0]();
   assert.equal(page.element('pairing-code').textContent, '··· ··· ··· ···');
-  assert.equal(page.element('pairing-status').textContent, 'Receiver unavailable');
+  assert.equal(page.toast(), 'Receiver unavailable');
+  assert.equal(page.element('pairing-status').textContent, 'YouTube on your phone → Cast → Link with TV code');
   assert.equal(page.element('youtube-pair').hidden, false);
   assert.equal(page.element('youtube-pair').disabled, true);
   await page.element('youtube-pair').handlers.click[0]();
@@ -328,8 +331,8 @@ test('mute request keeps available controls visually stable while blocking dupli
   finish({ok:true,json:async()=>({})}); await pending;
   assert.equal(page.element('youtube-mute').disabled, false);
   assert.equal(page.element('youtube-mute').dataset.pending, 'false');
-  assert.equal(page.element('youtube-action-feedback').textContent, '');
-  assert.equal(page.element('notice').textContent, '');
+  assert.equal(page.toast(), '');
+  assert.equal(page.toast(), '');
 });
 
 test('failed mute restores controls and keeps the error visible', async () => {
@@ -339,7 +342,7 @@ test('failed mute restores controls and keeps the error visible', async () => {
   assert.equal(await vm.runInContext("change('api/player', {player:'spotify',action:'mute'}, null)", page.context), false);
   assert.equal(page.element('spotify-mute').disabled, false);
   assert.equal(page.element('spotify-mute').dataset.pending, 'false');
-  assert.equal(page.element('notice').textContent, 'Mute failed');
+  assert.equal(page.toast(), 'Mute failed');
 });
 
 
@@ -705,13 +708,13 @@ test('drop projection persists until acknowledgement and rolls back on failure',
 test('YouTube feedback expires after success but keeps errors visible', () => {
   const page = ui(true); page.receive(snapshot());
   vm.runInContext("selectPlayer('youtube'); notice('Added to queue')",page.context);
-  assert.equal(page.element('youtube-action-feedback').hidden,false);
-  page.flushDelay(4000);
-  assert.equal(page.element('youtube-action-feedback').hidden,true);
+  assert.equal(page.element('notification-toasts').children.length,1);
+  page.flushDelay(7000);
+  assert.equal(page.element('notification-toasts').children.length,0);
   vm.runInContext("notice('Added to queue'); notice('Could not add video',true)",page.context);
-  page.flushDelay(4000);
-  assert.equal(page.element('youtube-action-feedback').hidden,false);
-  assert.equal(page.element('youtube-action-feedback').textContent,'Could not add video');
+  page.flushDelay(7000);
+  assert.equal(page.element('notification-toasts').children.length,1);
+  assert.equal(page.toast(),'Could not add video');
 });
 
 test('YouTube Autoplay remains available in settings while Spotify is selected', () => {
@@ -737,11 +740,10 @@ test('settings errors appear inside the drawer instead of behind it', () => {
   vm.runInContext("selectPlayer('youtube')",page.context);
   page.element('settings-drawer').showModal();
   vm.runInContext("notice('Could not update Autoplay',true)",page.context);
-  assert.equal(page.element('settings-feedback').hidden,false);
-  assert.equal(page.element('settings-feedback').textContent,'Could not update Autoplay');
-  assert.equal(page.element('youtube-action-feedback').textContent,'');
-  page.flushDelay(4000);
-  assert.equal(page.element('settings-feedback').hidden,false);
+  assert.equal(page.element('notification-toasts').parentNode, page.element('settings-drawer'));
+  assert.equal(page.toast(),'Could not update Autoplay');
+  page.flushDelay(7000);
+  assert.equal(page.element('notification-toasts').parentNode, page.element('settings-drawer'));
 });
 
 test('initial HTML puts controls on the cover and keeps Checking hidden before scripts run', () => {
@@ -1004,4 +1006,52 @@ test('invalid or inaccessible tab storage defaults safely to Spotify', () => {
     page.element('youtube-tab').click();
     assert.equal(page.element('youtube-panel').hidden, false);
   }
+});
+
+test('shared failures deduplicate, dismissal survives polls, and recovery resolves the incident', () => {
+  const page=ui(true), state=snapshot();
+  const diagnostic={scope:'audio',code:'equalizer_missing',summary:'Equalizer output is missing',detail:'Its process is running without an output.',recovery:'recovering',recovery_detail:'Restarting the equalizer.'};
+  state.services.forEach(s=>s.diagnostic=diagnostic);
+  page.receive(state);
+  assert.equal(page.element('notification-list').children.length,1);
+  assert.equal(page.element('spotify-status').textContent,'Recovering');
+  assert.match(page.toast(),/process is running without an output/);
+  page.element('notification-toasts').children[0].children[0].children[1].click();
+  page.receive(state);
+  assert.equal(page.element('notification-toasts').children.length,0);
+  assert.equal(page.element('notification-list').children.length,1);
+  page.receive(snapshot());
+  assert.match(page.toast(),/responding again/);
+  page.element('clear-notifications').click();page.receive(snapshot());
+  assert.equal(page.element('notification-list').children.length,0);
+});
+test('restart progress updates one message and cleared completion does not reappear on polling', () => {
+  const page=ui(true),state=snapshot();
+  state.services[1].restart={requested_at:1,status:'pending',message:'Waiting for a new session.'};
+  page.receive(state);assert.match(page.toast(),/Waiting/);
+  state.services[1].restart.status='blocked';state.services[1].restart.message='Restart blocked: audio missing.';
+  page.receive(state);assert.match(page.toast(),/blocked/);
+  state.services[1].restart.status='completed';state.services[1].restart.message='Player responding.';
+  page.receive(state);assert.equal(page.element('notification-list').children.length,1);
+  page.element('clear-notifications').click();page.receive(state);
+  assert.equal(page.element('notification-list').children.length,0);
+});
+test('notification drawer suspends shortcuts and status details return focus to the status button', () => {
+  const page=ui(true);page.receive(snapshot());page.element('youtube-status').click();
+  assert.equal(page.element('notifications-drawer').open,true);
+  assert.equal(page.key(' ').defaultPrevented,undefined);
+  page.element('close-notifications').click();
+  assert.equal(vm.runInContext('document.activeElement.id',page.context),'youtube-status');
+  assert.equal(page.element('notification-toasts').parentNode,page.element('body'));
+});
+test('distinct actions retain bounded history and clearing keeps unresolved service issues', () => {
+  const page=ui(true),state=snapshot();
+  state.services[0].diagnostic={scope:'spotify',code:'service_failed',summary:'Spotify stopped',recovery:'scheduled'};
+  page.receive(state);
+  vm.runInContext("for (let i=0;i<40;i++) notice('Action '+i, true)",page.context);
+  assert.equal(page.element('notification-list').children.length,30);
+  assert.equal(page.element('notification-toasts').children.length,3);
+  page.element('clear-notifications').click();
+  assert.equal(page.element('notification-list').children.length,1);
+  assert.match(page.element('notification-list').children[0].children[1].textContent,/Spotify stopped/);
 });

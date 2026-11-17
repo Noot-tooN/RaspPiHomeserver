@@ -7,8 +7,6 @@
     Bright: [0, 0, 0, 0, 0, 0, 1, 2, 3, 2],
   };
   const menu = document.getElementById('preset');
-  const note = document.getElementById('eq-note');
-  const hint = note.textContent;
   const chart = document.getElementById('bands');
   for (const name of Object.keys(presets)) menu.add(new Option(name, name));
   const custom = new Option('Custom', 'Custom');
@@ -77,11 +75,11 @@
       if (!response.ok) throw new Error();
       const applied = (await response.json()).gains;
       if (!queued && revision === sentRevision) render(applied);
-      note.textContent = hint;
+      notifications.resolve('equalizer', 'Equalizer controls are responding again.');
       enable(true);
     } catch {
       enable(false);
-      note.textContent = 'Equalizer unavailable. Reopen Settings to retry.';
+      notifications.put('equalizer', {title: 'Equalizer controls unavailable', message: 'Could not read or apply equalizer settings. Reopen Settings to retry.', level: 'error', active: true});
     } finally {
       pending = false;
       if (queued) {

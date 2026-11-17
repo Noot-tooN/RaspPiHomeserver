@@ -88,6 +88,10 @@ if __name__ == '__main__':
         parser.error('Autoplay requires --enabled=true or false')
     try:
         print(json.dumps(asyncio.run(main(args))))
-    except Exception:
-        print('YouTube player unavailable', file=sys.stderr)
-        sys.exit(1)
+    except Exception as error:
+        if args.action == 'state':
+            code = 'control_timeout' if isinstance(error, TimeoutError) else 'control_unavailable'
+            print(json.dumps({'id': 'youtube', 'available': False, 'error_code': code}))
+        else:
+            print('YouTube player unavailable', file=sys.stderr)
+            sys.exit(1)
