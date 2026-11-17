@@ -114,3 +114,24 @@ func TestStoppedPlayerReportsExitReason(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestNewPlayerAPIWarmupIsProgressNotBlocked(t *testing.T) {
+	s, units := healthyDiagnosticFixture()
+	s.Players[0].Available = false
+	c := systemController{restarts: map[string]*restartRequest{"spotify": {RequestedAt: time.Now().UnixMilli(), PreviousInvocation: "old"}}}
+	c.diagnose(&s, units, nil)
+	if d := s.Services[0].Diagnostic; d.Code != "player_starting" || d.Recovery != "recovering" || s.Services[0].Restart.Status != "pending" {
+		t.Fatalf("warm-up marked failed: %+v %+v", d, s.Services[0].Restart)
+	}
+	s.Audio.equalizerPresent = false
+	c.diagnose(&s, units, nil)
+	if s.Services[0].Restart.Status != "blocked" {
+		t.Fatal("real dependency failure hidden by warm-up")
+	}
+	s.Audio.equalizerPresent = true
+	c.restarts["spotify"].RequestedAt = time.Now().Add(-3 * time.Minute).UnixMilli()
+	c.diagnose(&s, units, nil)
+	if s.Services[0].Diagnostic.Recovery == "recovering" || s.Services[0].Restart.Status == "pending" {
+		t.Fatal("unresponsive API reported as warming forever")
+	}
+}

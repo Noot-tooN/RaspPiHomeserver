@@ -269,6 +269,11 @@ func (c *systemController) diagnose(s *state, units, system unitStates) {
 				}
 			}
 		}
+		if d != nil && d.Scope == service.ID && (d.Code == "control_unavailable" || d.Code == "control_timeout") && c.restartWarming(service.ID, unit["InvocationID"], now) {
+			d.Code, d.Summary = "player_starting", service.Name+" is starting"
+			d.Detail = "The restarted process is running, but its controls are not ready yet."
+			d.Recovery, d.RecoveryDetail = "recovering", "Waiting for the new player session to respond."
+		}
 		if d != nil && d.Recovery == "" {
 			recoveryFor(d, units, recovery)
 		}
@@ -299,4 +304,13 @@ func (c *systemController) restartOutcome(id, invocation string, healthy bool, d
 		result.Status, result.Message = "timed_out", "Restart has not completed after two minutes. Check the current service details."
 	}
 	return result
+}
+
+// A new process can take time to open its API. Treat that bounded warm-up as
+// progress, while real dependency failures remain blocked immediately.
+func (c *systemController) restartWarming(id, invocation string, now time.Time) bool {
+	c.restartMu.Lock()
+	defer c.restartMu.Unlock()
+	request := c.restarts[id]
+	return request != nil && !request.Completed && invocation != "" && invocation != request.PreviousInvocation && now.UnixMilli()-request.RequestedAt < 120000
 }
