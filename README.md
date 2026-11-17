@@ -238,7 +238,9 @@ Revert/fix the Git commit and restart Comin when ready. Kernel/firmware activati
 
 The YouTube monitor detects empty documents, browser errors and a missing name hook. It does not prove playback works or that YouTube's remote casting service is healthy. YouTube's website is fetched at runtime and can change independently of the pinned OS.
 
-The audio recovery timer checks every 15 seconds. Once the DAC is initialized,
+The equalizer waits for the actual PipeWire DAC output before connecting, rather
+than treating a running PipeWire process as ready. Failed mixer initialization
+is retried automatically. The audio recovery timer checks every 15 seconds. Once the DAC is initialized,
 it restarts missing audio backends, replaces an equalizer that has been running
 for 30 seconds without its output, and retries receiver starts blocked by failed
 dependencies. Healthy players are left running. The DAC readiness marker survives

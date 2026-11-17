@@ -47,6 +47,11 @@ class AudioRecoveryTests(unittest.TestCase):
             ("systemctl", "--user", "--no-block", "restart", "rasppi-equalizer.service")])
         self.assertEqual(self.probe(sinks="1 rasppi-dac\n", age=10), [])
 
+    def test_waiting_readiness_does_not_block_equalizer_repair(self):
+        self.assertEqual(self.probe(sinks="1 rasppi-dac\n", transition="rasppi-audio-ready"), [
+            ("systemctl", "--user", "--no-block", "restart", "rasppi-equalizer.service")])
+        self.assertEqual(self.probe(transition="rasppi-equalizer"), [])
+
     def test_backends_recover_before_receivers(self):
         self.assertEqual(self.probe(missing=("pipewire", "rasppi-equalizer", "spotify")), [
             ("systemctl", "--user", "--no-block", "start", "pipewire.service", "rasppi-equalizer.service")])

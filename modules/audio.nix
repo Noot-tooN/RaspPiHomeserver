@@ -61,6 +61,7 @@ in
     description = "Restore the audited DAC Pro mixer state";
     wantedBy = [ "multi-user.target" ];
     after = [ "sound.target" ];
+    unitConfig.StartLimitIntervalSec = 0;
     path = [
       pkgs.alsa-utils
       pkgs.coreutils
@@ -76,6 +77,8 @@ in
       # it before attempting to restore the mixer again.
       RuntimeDirectoryPreserve = "yes";
       TimeoutStartSec = 100;
+      Restart = "on-failure";
+      RestartSec = 10;
     };
     script = ''
       rm -f /run/rasppi-dac/ready

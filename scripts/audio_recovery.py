@@ -25,8 +25,9 @@ def recover():
     for block in output.strip().split("\n\n"):
         props = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
         states[props["Id"].removesuffix(".service")] = props
-    # Let an in-progress update/restart finish; do not replace its queued jobs.
-    if any(s["ActiveState"] in TRANSITIONAL for s in states.values()):
+    # Let backends finish restarting. The readiness service may be waiting for
+    # a missing sink, so its activating state must not prevent repairing it.
+    if any(states[name]["ActiveState"] in TRANSITIONAL for name in BACKENDS):
         return
 
     def start_missing(names):
@@ -49,6 +50,9 @@ def recover():
         if time.monotonic() - started >= 30:
             print("Recovering equalizer: playback sink is missing", flush=True)
             run("systemctl", "--user", "--no-block", "restart", "rasppi-equalizer.service")
+        return
+    # Do not replace a user-requested player restart once audio is healthy.
+    if any(states[name]["ActiveState"] in TRANSITIONAL for name in PLAYERS):
         return
     if start_missing(PLAYERS):
         print("Recovering audio readiness and stopped receivers", flush=True)
