@@ -10,6 +10,11 @@ let
   };
 in
 {
+  # Nix 2.35 evaluates flake sources lazily instead of eagerly unpacking the
+  # entire nixpkgs tree into /nix/store, which stalls this Pi's SD card.
+  # Comin's service PATH follows config.nix.package as well.
+  nix.package = pkgs.nixVersions.latest;
+
   services.comin = {
     enable = true;
     hostname = "rasppi";
