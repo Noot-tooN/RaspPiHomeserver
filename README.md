@@ -192,9 +192,12 @@ and a simulated preview that never touches the Pi.
 
 The system and Comin use `nixVersions.latest` from the locked package set
 (currently Nix 2.35.3). Nix 2.35 evaluates flake sources without eagerly copying
-the entire tree into the store. This avoids the cold nixpkgs import that blocked
-the SD card with tens of thousands of small-file writes on Nix 2.34.9. Changing
-this Nix package does not change the flake input pins or the Pi kernel.
+the entire tree into the store. A Comin-only wrapper disables substitution for
+`nix eval` and `nix derivation show`, so Nix fetches sources into its Git cache
+instead of unpacking the whole source NAR onto the SD card. `nix build` retains
+binary substitution. This avoids the cold nixpkgs import that blocked the SD
+card with tens of thousands of small-file writes on Nix 2.34.9. Changing this
+Nix package does not change the flake input pins or the Pi kernel.
 
 Comin, the Nix daemon, and garbage collection share a background resource
 budget: one CPU core, a 1,100 MiB memory ceiling,
