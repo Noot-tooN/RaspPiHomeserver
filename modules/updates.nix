@@ -3,17 +3,17 @@ let
   backgroundService = {
     Slice = "nixmaintenance.slice";
     Nice = 15;
-    # BFQ serves idle-class queues only after ordinary traffic. Keep updates
-    # low priority without starving filesystem metadata operations.
+    # Filesystem journal progress must not depend on a starved write queue.
+    # Limit buffered write bursts below instead of deprioritizing SD writeback.
     IOSchedulingClass = "best-effort";
-    IOSchedulingPriority = 7;
+    IOSchedulingPriority = 4;
   };
 in
 {
   services.comin = {
     enable = true;
     hostname = "rasppi";
-    # A cold nixpkgs tree contains many small files; bounded SD I/O can take
+    # A cold nixpkgs tree contains many small files; SD I/O can take
     # longer than the default 30-minute deadline, especially for both inputs.
     evalTimeout = 5400;
     buildTimeout = 5400;
@@ -33,16 +33,20 @@ in
     sliceConfig = {
       CPUWeight = 10;
       CPUQuota = "100%";
-      IOWeight = 10;
-      MemoryHigh = "1000M";
+      IOWeight = 100;
+      # Repeated direct reclaim at MemoryHigh amplified the SD writeback stall.
+      # Retain a hard budget, but do not continuously throttle the evaluator.
+      MemoryHigh = "infinity";
       MemoryMax = "1100M";
       MemorySwapMax = "512M";
-      # Resolve the backing disk from /, so SD and recovery USB boots work.
-      IOReadBandwidthMax = "/ 8M";
-      IOWriteBandwidthMax = "/ 2M";
-      IOReadIOPSMax = "/ 1000";
-      IOWriteIOPSMax = "/ 250";
     };
+  };
+  # Nixpkgs extraction can otherwise accumulate ~90 MiB of dirty small files
+  # and exhaust the ext4 journal, blocking unrelated reads and SSH sessions.
+  # Start writeback early and pace writers before a large backlog develops.
+  boot.kernel.sysctl = {
+    "vm.dirty_background_bytes" = 4 * 1024 * 1024;
+    "vm.dirty_bytes" = 16 * 1024 * 1024;
   };
   # Preserve the user services' working set when Nix fills the file cache.
   # This is best-effort reclaim protection, not a memory reservation or limit.
@@ -56,7 +60,7 @@ in
     inherit (backgroundService) Slice Nice;
   };
   nix.daemonIOSchedClass = "best-effort";
-  nix.daemonIOSchedPriority = 7;
+  nix.daemonIOSchedPriority = 4;
   systemd.services.nix-gc.serviceConfig = backgroundService;
 
   # Substitutions otherwise default to 16 parallel downloads/unpacks. Store

@@ -191,9 +191,13 @@ and a simulated preview that never touches the Pi.
 ## Updates and recovery
 
 Comin, the Nix daemon, and garbage collection share a background resource
-budget: one CPU core, 1,000 MiB memory pressure threshold, 1,100 MiB memory ceiling,
-and up to 512 MiB compressed swap. Disk reads/writes are capped at 8/2 MB per
-second and 1,000/250 operations per second, with lower CPU/I/O priority. Initial
+budget: one CPU core, a 1,100 MiB memory ceiling,
+and up to 512 MiB compressed swap. CPU priority is lowered, while disk I/O uses
+normal best-effort priority. Background writeback starts at 4 MiB of dirty data,
+and writers are paced at 16 MiB rather than allowing a large burst of dirty
+Nixpkgs files to fill the SD card's ext4 journal. Hard disk bandwidth/IOPS limits
+and the soft memory throttle are deliberately omitted: they prolonged writeback
+and reclaim stalls that also blocked SSH and the players. Initial
 updates can take longer. User services have 512 MiB of best-effort memory
 reclaim protection to help audio and SSH remain responsive. Nix downloads
 and unpacks one substitute at a time, and automatic store deduplication is off
@@ -204,11 +208,12 @@ being repeatedly cancelled. Small updates reuse dependencies while cached.
 The vendor kernel's memory controller is enabled with `cgroup_enable=memory`;
 this requires a reboot when first added. Comin checks that the controller exists
 before starting. The existing kernel's BFQ module prioritizes foreground SD-card
-I/O; no kernel compilation is introduced. Limits resolve the disk backing `/`,
-so the recovery USB also works.
+I/O; no kernel compilation is introduced. The writeback settings apply to both
+SD and recovery USB boots.
 
 To inspect the effective controls, use `systemctl show nixmaintenance.slice`
-and `cat /sys/fs/cgroup/nixmaintenance.slice/io.max`. Comin's journal records
+and `sysctl vm.dirty_background_bytes vm.dirty_bytes`. The maintenance slice's
+`io.max` should be empty and `memory.high` should be `max`. Comin's journal records
 evaluation, build, and deployment progress: `journalctl -u comin -f`.
 
 Comin follows `master` immediately; it does **not** wait for GitHub Actions. Before merging application changes, run `NixOS ARM64` manually on the branch and wait for its **Publish and verify the signed application cache** step. Pull-request checks do not receive the cache signing key. This makes the binary available before Comin sees the merge.
