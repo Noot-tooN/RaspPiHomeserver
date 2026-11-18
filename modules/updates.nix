@@ -1,5 +1,8 @@
-{ pkgs, ... }:
+{ config, lib, pkgs, ... }:
 let
+  cominNix = pkgs.writeShellScriptBin "nix" ''
+    exec ${pkgs.bash}/bin/bash ${../scripts/comin-nix.sh} ${config.nix.package}/bin/nix "$@"
+  '';
   backgroundService = {
     Slice = "nixmaintenance.slice";
     Nice = 15;
@@ -10,6 +13,11 @@ let
   };
 in
 {
+  # Nix 2.35 evaluates flake sources lazily instead of eagerly unpacking the
+  # entire nixpkgs tree into /nix/store, which stalls this Pi's SD card.
+  # Comin's service PATH follows config.nix.package as well.
+  nix.package = pkgs.nixVersions.latest;
+
   services.comin = {
     enable = true;
     hostname = "rasppi";
@@ -52,6 +60,7 @@ in
   # This is best-effort reclaim protection, not a memory reservation or limit.
   systemd.slices.user.sliceConfig.MemoryLow = "512M";
 
+  systemd.services.comin.path = lib.mkBefore [ cominNix ];
   systemd.services.comin.serviceConfig = backgroundService // {
     # Do not silently run unbounded after booting an older kernel command line.
     ExecCondition = "${pkgs.gnugrep}/bin/grep -qw memory /sys/fs/cgroup/cgroup.controllers";
