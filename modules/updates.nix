@@ -30,8 +30,29 @@ in
         name = "origin";
         url = "https://github.com/Noot-tooN/RaspPiHomeserver.git";
         branches.main.name = "master";
+        # The Pi's calendar timer triggers the fetch that starts evaluation.
+        poller.period = 0;
       }
     ];
+  };
+
+  systemd.timers.comin-fetch = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "*-*-* 03:00:00 Europe/Belgrade";
+      AccuracySec = "1s";
+      Persistent = false;
+    };
+  };
+  systemd.services.comin-fetch = {
+    description = "Check for Raspberry Pi updates";
+    # Respect an administrator stopping Comin for a rollback.
+    unitConfig.Requisite = "comin.service";
+    after = [ "comin.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${lib.getExe config.services.comin.package} fetch";
+    };
   };
 
   # Evaluation/downloads may run inside Comin as root; builds requested by

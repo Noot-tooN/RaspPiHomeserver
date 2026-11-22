@@ -225,7 +225,9 @@ and `sysctl vm.dirty_background_bytes vm.dirty_bytes`. The maintenance slice's
 `io.max` should be empty and `memory.high` should be `max`. Comin's journal records
 evaluation, build, and deployment progress: `journalctl -u comin -f`.
 
-Comin follows `master` immediately; it does **not** wait for GitHub Actions. Before merging application changes, run `NixOS ARM64` manually on the branch and wait for its **Publish and verify the signed application cache** step. Pull-request checks do not receive the cache signing key. This makes the binary available before Comin sees the merge.
+The Pi checks `master` daily at **03:00 Europe/Belgrade**. Its local `comin-fetch.timer` triggers the fetch that starts evaluation. A merge after 03:00 waits until the following night. A Pi powered off at 03:00 waits for the next 03:00 after boot. Check the next run with `systemctl list-timers comin-fetch.timer`. To explicitly apply a pending update outside the schedule, run `sudo comin fetch`.
+
+Before merging application changes, run `NixOS ARM64` manually on the branch and wait for its **Publish and verify the signed application cache** step. Pull-request checks do not receive the cache signing key. This makes the binary available before Comin sees the merge.
 
 Every Sunday at 02:23 UTC (03:23 CET / 04:23 CEST), `Weekly updates` updates all flake inputs and opens a bot PR. It explicitly dispatches validation, checks expensive ARM64 cache availability, builds/tests the system, and publishes the app cache before guarded auto-merge. The merge requires an unchanged tested PR/master revision, only `flake.lock` modified, and unchanged input source identities, branches and dependency wiring. Failed builds/cache checks or broader lock changes leave the PR open for review. The repository must permit GitHub Actions to create PRs; enabling that shared create/approve setting is pending owner approval.
 
