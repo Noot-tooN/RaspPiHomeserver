@@ -153,8 +153,18 @@
   <div id="notification-toasts" class="notification-toasts" aria-label="Recent notifications"></div>
   <p id="notification-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
   <dialog class="side-drawer" id="notifications-drawer" aria-labelledby="notifications-title">
-    <div class="drawer-heading"><div><h2 id="notifications-title">Notifications</h2><p class="hint">Current issues &amp; this session’s history</p></div><button id="close-notifications" class="button icon-button" aria-label="Close notifications">×</button></div>
-    <div class="drawer-content"><button id="clear-notifications" class="button" type="button">Clear history</button><p id="notifications-empty" class="hint">No notifications yet.</p><div id="notification-list"></div></div>
+    <div class="drawer-heading"><h2 id="notifications-title">Notifications</h2><button id="close-notifications" class="button icon-button" aria-label="Close notifications">×</button></div>
+    <div class="drawer-content">
+      <p id="notifications-empty" class="hint">No notifications yet.</p>
+      <section id="current-issues-section" aria-labelledby="current-issues-title" hidden>
+        <h3 id="current-issues-title">Current issues</h3>
+        <div id="notification-current" class="notification-list"></div>
+      </section>
+      <section id="history-section" aria-labelledby="history-title" hidden>
+        <div class="notification-heading"><h3 id="history-title">History</h3><button id="clear-notifications" class="button" type="button">Clear history</button></div>
+        <div id="notification-history" class="notification-list"></div>
+      </section>
+    </div>
   </dialog>
   <dialog class="side-drawer" id="settings-drawer" aria-labelledby="settings-title">
     <div class="drawer-heading"><div><h2 id="settings-title">Settings</h2><p class="hint">RaspPi audio &amp; services</p></div><button id="close-settings" class="button icon-button" aria-label="Close settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>

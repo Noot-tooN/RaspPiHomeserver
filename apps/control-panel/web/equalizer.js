@@ -34,7 +34,7 @@
     band.append(slider, freq, output);
     chart.append(band);
     slider.addEventListener('input', () => { revision++; render(read()); });
-    slider.addEventListener('change', () => sync(read()));
+    slider.addEventListener('change', () => sync(read(), `save the ${frequency} Hz band at ${signed(Number(slider.value))} dB`));
     return {slider, output};
   });
 
@@ -58,9 +58,9 @@
   let pending = false;
   let queued = null;
   let revision = 0;
-  async function sync(gains) {
+  async function sync(gains, action) {
     if (pending) {
-      if (gains) queued = gains;
+      if (gains) queued = {gains, action};
       return;
     }
     pending = true;
@@ -79,13 +79,13 @@
       enable(true);
     } catch {
       enable(false);
-      notifications.put('equalizer', {title: 'Equalizer controls unavailable', message: 'Could not read or apply equalizer settings. Reopen Settings to retry.', level: 'error', active: true});
+      notifications.put('equalizer', {title: 'Equalizer controls unavailable', message: `Couldn’t ${action || 'load equalizer settings'}. Reopen Settings to retry.`, level: 'error', active: true});
     } finally {
       pending = false;
       if (queued) {
         const next = queued;
         queued = null;
-        sync(next);
+        sync(next.gains, next.action);
       }
     }
   }
@@ -94,7 +94,7 @@
   enable(false);
   menu.addEventListener('change', () => {
     render(presets[menu.value]);
-    sync(read());
+    sync(read(), `save the ${menu.value} equalizer preset`);
   });
   document.getElementById('open-settings').addEventListener('click', () => sync());
 })();

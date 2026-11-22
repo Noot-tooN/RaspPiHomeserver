@@ -257,7 +257,7 @@ func (p *panel) action(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		fail(w, http.StatusServiceUnavailable, "Could not apply the change. Check the app or audio service and try again.")
+		fail(w, http.StatusServiceUnavailable, "Check the app or audio service and try again.")
 		return
 	}
 	p.refresh()

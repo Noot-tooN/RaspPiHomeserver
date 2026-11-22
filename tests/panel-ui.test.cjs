@@ -1013,18 +1013,21 @@ test('shared failures deduplicate, dismissal survives polls, and recovery resolv
   const diagnostic={scope:'audio',code:'equalizer_missing',summary:'Equalizer output is missing',detail:'Its process is running without an output.',recovery:'recovering',recovery_detail:'Restarting the equalizer.'};
   state.services.forEach(s=>s.diagnostic=diagnostic);
   page.receive(state);
-  assert.equal(page.element('notification-list').children.length,1);
+  assert.equal(page.element('notification-current').children.length,1);
   assert.equal(page.element('spotify-status').textContent,'Recovering');
   assert.match(page.toast(),/process is running without an output/);
   page.element('notification-toasts').children[0].children[0].children[1].click();
   page.receive(state);
   assert.equal(page.element('notification-toasts').children.length,0);
-  assert.equal(page.element('notification-list').children.length,1);
+  assert.equal(page.element('notification-current').children.length,1);
   page.receive(snapshot());
   assert.equal(page.toast(),'');
-  assert.match(page.element('notification-list').children[0].children[1].textContent,/process is running without an output.*responding again/);
+  assert.equal(page.element('current-issues-section').hidden,true);
+  const recovered = page.element('notification-history').children[0];
+  assert.match(recovered.children[1].textContent,/responding again/);
+  assert.match(recovered.children[3].children[0].children[1].textContent,/process is running without an output/);
   page.element('clear-notifications').click();page.receive(snapshot());
-  assert.equal(page.element('notification-list').children.length,0);
+  assert.equal(page.element('notification-history').children.length,0);
 });
 test('an unread warning survives recovery, reload and another incident until dismissed', () => {
   const values = new Map();
@@ -1058,11 +1061,11 @@ test('restart progress updates one message and cleared completion does not reapp
   state.services[1].restart.status='blocked';state.services[1].restart.message='Restart blocked: audio missing.';
   page.receive(state);assert.match(page.toast(),/blocked/);
   state.services[1].restart.status='completed';state.services[1].restart.message='Player responding.';
-  page.receive(state);assert.equal(page.element('notification-list').children.length,1);
+  page.receive(state);assert.equal(page.element('notification-history').children.length,1);
   page.flushDelay(7000);
   assert.match(page.toast(),/Restart blocked: audio missing.*Player responding/);
   page.element('clear-notifications').click();page.receive(state);
-  assert.equal(page.element('notification-list').children.length,0);
+  assert.equal(page.element('notification-history').children.length,0);
 });
 test('notification drawer suspends shortcuts and status details return focus to the status button', () => {
   const page=ui(true);page.receive(snapshot());page.element('youtube-status').click();
@@ -1076,10 +1079,88 @@ test('distinct actions retain bounded history and clearing keeps unresolved serv
   const page=ui(true),state=snapshot();
   state.services[0].diagnostic={scope:'spotify',code:'service_failed',summary:'Spotify stopped',recovery:'scheduled'};
   page.receive(state);
-  vm.runInContext("for (let i=0;i<40;i++) notice('Action '+i, true)",page.context);
-  assert.equal(page.element('notification-list').children.length,30);
+  vm.runInContext("for (let i=0;i<40;i++) notice('Action '+i)",page.context);
+  assert.equal(page.element('notification-history').children.length,29);
   assert.equal(page.element('notification-toasts').children.length,4);
   page.element('clear-notifications').click();
-  assert.equal(page.element('notification-list').children.length,1);
-  assert.match(page.element('notification-list').children[0].children[1].textContent,/Spotify stopped/);
+  assert.equal(page.element('notification-current').children.length,1);
+  assert.match(page.element('notification-current').children[0].children[1].textContent,/Spotify stopped/);
+});
+
+test('a recovery keeps only its own warnings, in order, across a reload and a recurrence', () => {
+  const saved = new Map();
+  const storage = {getItem: k => saved.get(k), setItem: (k, v) => saved.set(k, v)};
+  let page = ui(false, false, undefined, storage);
+  const run = code => vm.runInContext(code, page.context);
+  const warn = (key, message) => run(`notifications.put('${key}', {title:'${key}', message:'${message}', active:true, level:'warning'})`);
+  warn('audio', 'Output missing');
+  warn('youtube', 'Browser unavailable');
+  run("notice('Retry later', true, 'Couldn’t mute Spotify')");
+  page.advance(1000);
+  warn('audio', 'Waiting for the DAC');
+  warn('audio', 'Waiting for the DAC');
+  run("notifications.resolve('audio', 'Output recovered')");
+  page = ui(false, false, undefined, storage);
+  warn('audio', 'Output missing again');
+  const history = page.element('notification-history');
+  const current = page.element('notification-current');
+  assert.equal(current.children.length, 2);
+  assert.equal(history.children.length, 2);
+  const [group, action] = history.children;
+  assert.equal(action.children[0].children[0].textContent, 'Couldn’t mute Spotify');
+  const original = group.children[3].children[0];
+  assert.equal(original.children[0].dateTime, new Date(1000).toISOString());
+  assert.equal(original.children[1].textContent, 'Output missing');
+  assert.equal(group.children[4].children[0].textContent, '1 more warning');
+  assert.equal(group.children[4].children[1].children[0].children[1].textContent, 'Waiting for the DAC');
+  group.children[0].children[1].click();
+  assert.equal(history.children.length, 1);
+  assert.equal(current.children.length, 2);
+  page = ui(false, false, undefined, storage);
+  run('notifications.render()');
+  assert.equal(page.element('notification-history').children.length, 1);
+  run("notice('Still unavailable', true, 'Couldn’t restart YouTube')");
+  assert.equal(page.element('notification-history').children.length, 2);
+});
+
+test('action failures name the operation, target and requested value', async () => {
+  const page = ui(); page.receive(snapshot());
+  page.context.AbortSignal = {timeout: () => undefined};
+  page.context.fetch = async () => ({ok:false, json:async () => ({error:'Service unavailable'})});
+  for (const [endpoint, payload, expected] of [
+    ['volume', {volume:35}, 'Couldn’t set master volume to 35%'],
+    ['mute', {muted:false}, 'Couldn’t unmute master audio'],
+    ['restart', {service:'youtube'}, 'Couldn’t restart YouTube'],
+    ['player', {player:'spotify', action:'seek', position_ms:83000}, 'Couldn’t seek to 1:23 in Spotify'],
+    ['player', {player:'youtube', action:'autoplay', enabled:false}, 'Couldn’t turn off YouTube Autoplay'],
+  ]) {
+    await vm.runInContext(`change('api/${endpoint}', ${JSON.stringify(payload)})`,page.context);
+    const card = page.element('notification-history').children[0];
+    assert.equal(card.children[0].children[0].textContent, expected);
+    assert.equal(card.children[1].textContent, 'Service unavailable');
+  }
+});
+
+test('completed restarts stay dismissed after reloading and a new restart is still reported', () => {
+  const values = new Map();
+  const storage = {getItem: key => values.get(key), setItem: (key, value) => values.set(key, value)};
+  const state = snapshot();
+  const restart = state.services[0].restart = {requested_at:1, status:'completed', message:'Restart completed.'};
+  let page = ui(false, false, undefined, storage);
+  page.receive(state);
+  page.element('notification-history').children[0].children[0].children[1].click();
+  page = ui(false, false, undefined, storage);
+  page.receive(state);
+  assert.equal(page.element('notification-history').children.length, 0);
+  restart.requested_at = 2;
+  page.receive(state);
+  assert.equal(page.element('notification-history').children.length, 1);
+});
+
+test('undismissed failed actions survive routine history pruning', () => {
+  const page = ui();
+  vm.runInContext("notice('Service unavailable', true, 'Couldn’t mute Spotify'); for (let i=0; i<40; i++) notice('Success '+i)", page.context);
+  const history = page.element('notification-history');
+  assert.equal(history.children.length, 30);
+  assert.equal(history.children.at(-1).children[0].children[0].textContent, 'Couldn’t mute Spotify');
 });
