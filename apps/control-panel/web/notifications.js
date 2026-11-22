@@ -1,12 +1,26 @@
 'use strict';
 
-// Session-only history. Stable keys update one incident, not one alert per poll.
+// Stable keys update one incident across status polls.
 const notifications = (() => {
   const entries = new Map();
   const timers = new Map();
   const seen = new Map();
   const $n = id => document.getElementById(id);
   let sequence = 0;
+  const storageKey = 'rasppi.warningHistory.v1';
+  try {
+    for (const entry of JSON.parse(sessionStorage.getItem(storageKey) || '[]')) {
+      if (!entry?.warning || typeof entry.key !== 'string' || !Number.isSafeInteger(entry.order)) continue;
+      entries.set(entry.key, entry);
+      seen.set(entry.key, entry.signature);
+      sequence = Math.max(sequence, entry.order);
+    }
+  } catch { /* Storage can be unavailable in private browsing. */ }
+  function saveWarnings() {
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify([...entries.values()].filter(entry => entry.warning)));
+    } catch { /* Keep the in-page notifications when storage is unavailable. */ }
+  }
   function mount() {
     const host = $n('notification-toasts');
     const parent = ['notifications-drawer', 'settings-drawer', 'shortcut-help'].map($n).find(dialog => dialog?.open) || document.body;
@@ -19,26 +33,36 @@ const notifications = (() => {
     if (!entry) return;
     entry.toast = false;
     clearTimeout(timers.get(key)); timers.delete(key);
+    if (entry.warning) saveWarnings();
     render();
   }
   function put(key, value) {
-    const signature = JSON.stringify([value.title, value.message, value.level, value.active, value.version]);
+    const signature = JSON.stringify([value.title, value.message, value.level, value.active, value.version, value.requestedAt]);
     if (seen.get(key) === signature) return;
     seen.set(key, signature);
-    const entry = {...value, key, signature, at: Date.now(), order: ++sequence, toast: true};
+    const previous = entries.get(key);
+    const continuing = previous?.active && previous.requestedAt === value.requestedAt;
+    if (previous?.warning && previous.toast && !continuing) {
+      // A new incident at the same player must not overwrite an unread warning.
+      const historyKey = `history:${previous.order}`;
+      entries.set(historyKey, {...previous, key: historyKey, active: false});
+    }
+    const warning = (continuing && previous.warning) ||
+      (value.active && ['warning', 'error'].includes(value.level) ? value.message : '');
+    const entry = {...value, key, signature, warning, at: Date.now(), order: ++sequence,
+      toast: continuing && previous.warning ? previous.toast : true};
     entries.set(key, entry);
     clearTimeout(timers.get(key));
-    // Keep unresolved errors on screen until dismissed. Everything stays in
-    // the history until cleared; polling never reopens a dismissed incident.
-    if (value.level === 'success' || value.level === 'info') {
+    if (!warning && (value.level === 'success' || value.level === 'info')) {
       timers.set(key, setTimeout(() => dismiss(key), 7000));
     }
     while (entries.size > 30) {
-      const oldest = [...entries.values()].filter(item => !item.active).sort((a, b) => a.order - b.order)[0];
+      const oldest = [...entries.values()].filter(item => !item.active && !(item.warning && item.toast)).sort((a, b) => a.order - b.order)[0];
       if (!oldest) break;
       clearTimeout(timers.get(oldest.key)); timers.delete(oldest.key); entries.delete(oldest.key);
-      if (oldest.key.startsWith('action:')) seen.delete(oldest.key);
+      if (/^(action|history):/.test(oldest.key)) seen.delete(oldest.key);
     }
+    saveWarnings();
     $n('notification-announcement').textContent = `${entry.title}. ${entry.message}`;
     render();
   }
@@ -59,7 +83,8 @@ const notifications = (() => {
       close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', `Dismiss notification: ${entry.title}`);
       close.addEventListener('click', () => dismiss(entry.key)); heading.append(close);
     }
-    const text = document.createElement('p'); text.textContent = entry.message;
+    const text = document.createElement('p');
+    text.textContent = entry.warning && entry.warning !== entry.message ? `${entry.warning} ${entry.message}` : entry.message;
     item.append(heading, text);
     if (!toast) {
       const time = document.createElement('p'); time.className = 'notification-time';
@@ -73,7 +98,9 @@ const notifications = (() => {
     const sorted = [...entries.values()].sort((a, b) => Number(b.active) - Number(a.active) || b.order - a.order);
     const toasts = $n('notification-toasts'), list = $n('notification-list');
     // Keep focused controls stable while polling updates another incident.
-    for (const [host, values, toast] of [[toasts, sorted.filter(e => e.toast).sort((a, b) => b.order - a.order).slice(0, 3), true], [list, sorted, false]]) {
+    const visible = sorted.filter(e => e.toast).sort((a, b) => b.order - a.order)
+      .filter((entry, index) => index < 3 || entry.warning);
+    for (const [host, values, toast] of [[toasts, visible, true], [list, sorted, false]]) {
       const keys = new Set(values.map(e => e.key));
       for (const child of [...host.children]) if (!keys.has(child.dataset.key)) child.remove();
       values.forEach((entry, index) => {
@@ -106,7 +133,7 @@ const notifications = (() => {
       const restart = service.restart;
       if (restart) put(`restart:${service.id}`, {title: `${service.name || service.id} restart`,
         message: restart.message, level: restart.status === 'completed' ? 'success' : restart.status === 'pending' ? 'info' : 'error',
-        active: restart.status !== 'completed', version: `${restart.requested_at}:${restart.status}`});
+        active: restart.status !== 'completed', requestedAt: restart.requested_at, version: restart.status});
     }
     const youtube = state?.players?.find(p => p.id === 'youtube');
     if (youtube?.queue_error) put('queue', {title: 'YouTube queue', message: youtube.queue_error, level: 'error', active: true});
@@ -114,7 +141,8 @@ const notifications = (() => {
     for (const [key, entry] of entries) if (key.startsWith('health:') && entry.active && !present.has(key)) resolve(key, 'The player and its audio dependencies are responding again.');
   }
   $n('clear-notifications').addEventListener('click', () => {
-    for (const [key, entry] of entries) if (!entry.active) { entries.delete(key); if (key.startsWith('action:')) seen.delete(key); clearTimeout(timers.get(key)); timers.delete(key); }
+    for (const [key, entry] of entries) if (!entry.active) { entries.delete(key); if (/^(action|history):/.test(key)) seen.delete(key); clearTimeout(timers.get(key)); timers.delete(key); }
+    saveWarnings();
     render();
   });
   return {put, resolve, sync, mount, render};

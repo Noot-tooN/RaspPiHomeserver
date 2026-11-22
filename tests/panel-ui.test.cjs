@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // Run the real UI state handlers without a network, player, or audio device.
-function ui(shell = false, visualizer = false, storage) {
+function ui(shell = false, visualizer = false, storage, sessionStorage) {
   const elements = new Map(), listeners = {}, sources = [], timers = new Map();
   let timerID = 0;
   let now = 1000;
@@ -42,7 +42,7 @@ function ui(shell = false, visualizer = false, storage) {
     addEventListener(name, fn) { this.handlers[name] = fn; }
     close() { this.closed = true; }
   }
-  const context = vm.createContext({document, Event, EventSource, localStorage: storage, URLSearchParams, Date: class extends Date { static now() { return now; } }, window: {location: {search: visualizer ? "?visualizer=1" : ""}, addEventListener() {}}, performance: {now: () => now},
+  const context = vm.createContext({document, Event, EventSource, localStorage: storage, sessionStorage, URLSearchParams, Date: class extends Date { static now() { return now; } }, window: {location: {search: visualizer ? "?visualizer=1" : ""}, addEventListener() {}}, performance: {now: () => now},
     getComputedStyle: node => ({transform: node.pose || 'matrix(1, 0, 0, 1, 0, 0)'}),
     matchMedia: () => ({matches: true, addEventListener() {}}),
     requestAnimationFrame() { return 1; }, cancelAnimationFrame() {}, ResizeObserver: class { observe() {} }, setTimeout(fn, delay) { timers.set(++timerID, {fn, delay}); return timerID; }, clearTimeout(id) { timers.delete(id); }, setInterval() {}
@@ -1021,9 +1021,35 @@ test('shared failures deduplicate, dismissal survives polls, and recovery resolv
   assert.equal(page.element('notification-toasts').children.length,0);
   assert.equal(page.element('notification-list').children.length,1);
   page.receive(snapshot());
-  assert.match(page.toast(),/responding again/);
+  assert.equal(page.toast(),'');
+  assert.match(page.element('notification-list').children[0].children[1].textContent,/process is running without an output.*responding again/);
   page.element('clear-notifications').click();page.receive(snapshot());
   assert.equal(page.element('notification-list').children.length,0);
+});
+test('an unread warning survives recovery, reload and another incident until dismissed', () => {
+  const values = new Map();
+  const session = {getItem: key => values.get(key), setItem: (key, value) => values.set(key, value)};
+  let page = ui(true, false, undefined, session);
+  const state = snapshot();
+  state.players[1].queue_error = 'Could not load this video.';
+  page.receive(state);
+  page.receive(snapshot());
+  page.flushDelay(7000);
+  assert.match(page.toast(), /Could not load this video.*queue error has cleared/);
+  page = ui(true, false, undefined, session);
+  page.receive(snapshot());
+  assert.match(page.toast(), /Could not load this video.*queue error has cleared/);
+  state.players[1].queue_error = 'Next video missing.';
+  page.receive(state);
+  page.receive(snapshot());
+  vm.runInContext("for (let i = 0; i < 35; i++) notice('Action ' + i, false)", page.context);
+  page.flushDelay(7000);
+  assert.equal(page.element('notification-toasts').children.length, 2);
+  assert.match(page.toast(), /Next video missing/);
+  page.element('notification-toasts').children[0].children[0].children[1].click();
+  assert.match(page.toast(), /Could not load this video/);
+  page.element('notification-toasts').children[0].children[0].children[1].click();
+  assert.equal(page.toast(), '');
 });
 test('restart progress updates one message and cleared completion does not reappear on polling', () => {
   const page=ui(true),state=snapshot();
@@ -1033,6 +1059,8 @@ test('restart progress updates one message and cleared completion does not reapp
   page.receive(state);assert.match(page.toast(),/blocked/);
   state.services[1].restart.status='completed';state.services[1].restart.message='Player responding.';
   page.receive(state);assert.equal(page.element('notification-list').children.length,1);
+  page.flushDelay(7000);
+  assert.match(page.toast(),/Restart blocked: audio missing.*Player responding/);
   page.element('clear-notifications').click();page.receive(state);
   assert.equal(page.element('notification-list').children.length,0);
 });
@@ -1050,7 +1078,7 @@ test('distinct actions retain bounded history and clearing keeps unresolved serv
   page.receive(state);
   vm.runInContext("for (let i=0;i<40;i++) notice('Action '+i, true)",page.context);
   assert.equal(page.element('notification-list').children.length,30);
-  assert.equal(page.element('notification-toasts').children.length,3);
+  assert.equal(page.element('notification-toasts').children.length,4);
   page.element('clear-notifications').click();
   assert.equal(page.element('notification-list').children.length,1);
   assert.match(page.element('notification-list').children[0].children[1].textContent,/Spotify stopped/);
