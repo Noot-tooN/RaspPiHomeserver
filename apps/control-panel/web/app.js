@@ -65,9 +65,8 @@ function hidePairing() {
   renderPairing();
 }
 
-let notificationSequence = 0;
-function notice(message, error = false) {
-  notifications.put(`action:${++notificationSequence}`, {title: error ? 'Action failed' : 'Audio control', message, level: error ? 'error' : 'info', active: false, version: Date.now()});
+function notice(message, error = false, title = 'Audio control') {
+  notifications.put(null, {title, message, level: error ? 'error' : 'info', active: false});
 }
 
 function connection(online, label, quiet = false) {
@@ -472,13 +471,38 @@ async function requestPairing() {
   } catch (error) {
     if (epoch !== pairingEpoch) return;
     pairingError = error.name === 'TimeoutError' ? 'YouTube took too long. Wait a moment and retry.' : error.message || 'Connection lost. Try again.';
-    notice(pairingError, true);
+    notice(pairingError, true, 'Couldn’t get a YouTube TV code');
   } finally {
     pairingBusy = false; busy = false; render();
     setTimeout(render, Math.max(0, pairingRetryAt - Date.now()) + 50);
   }
 }
 $('youtube-pair').addEventListener('click', requestPairing);
+
+function actionFailureTitle(path, payload) {
+  const player = payload.player === 'spotify' ? 'Spotify' : 'YouTube';
+  switch (path) {
+    case 'api/volume': return `Couldn’t set master volume to ${payload.volume}%`;
+    case 'api/mute': return `Couldn’t ${payload.muted ? 'mute' : 'unmute'} master audio`;
+    case 'api/restart': return `Couldn’t restart ${payload.service === 'spotify' ? 'Spotify' : 'YouTube'}`;
+  }
+  switch (payload.action) {
+    case 'play': return `Couldn’t play ${player}`;
+    case 'pause': return `Couldn’t pause ${player}`;
+    case 'mute': case 'unmute': return `Couldn’t ${payload.action} ${player}`;
+    case 'next': return `Couldn’t skip to the next ${player} ${payload.player === 'spotify' ? 'track' : 'video'}`;
+    case 'previous': return `Couldn’t go back to the previous ${player} ${payload.player === 'spotify' ? 'track' : 'video'}`;
+    case 'seek': return `Couldn’t seek to ${formatTime(payload.position_ms)} in ${player}`;
+    case 'volume': return `Couldn’t set ${player} volume to ${payload.volume}%`;
+    case 'autoplay': return `Couldn’t turn ${payload.enabled ? 'on' : 'off'} YouTube Autoplay`;
+    case 'enqueue': return 'Couldn’t add the video to the YouTube queue';
+    case 'reorderqueue': return 'Couldn’t move the video in the YouTube queue';
+    case 'playqueue': return 'Couldn’t play the selected YouTube queue item';
+    case 'removequeue': return 'Couldn’t remove the video from the YouTube queue';
+    case 'clearqueue': return 'Couldn’t clear the YouTube queue';
+    default: return `Couldn’t apply the ${payload.action} command to ${player}`;
+  }
+}
 
 async function change(path, payload, message) {
   if (busy || !connected) return false;
@@ -489,11 +513,14 @@ async function change(path, payload, message) {
       body: JSON.stringify(payload), signal: AbortSignal.timeout(10000)
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Could not apply the change');
+    if (!response.ok) throw new Error(result.error || 'Check the control panel and try again.');
     if (message) notice(message);
     return true;
   } catch (error) {
-    notice(error.name === 'TimeoutError' ? 'Request timed out. Check the current state before trying again.' : error.message || 'Connection lost. Try again.', true);
+    const detail = error.name === 'TimeoutError' ? 'Request timed out. Check the current state before trying again.'
+      : error instanceof TypeError || error instanceof SyntaxError ? 'Could not confirm the result. Check the current state before retrying.'
+      : error.message || 'Connection lost. Try again.';
+    notice(detail, true, actionFailureTitle(path, payload));
     return false;
   } finally { busy = false; render(); }
 }
