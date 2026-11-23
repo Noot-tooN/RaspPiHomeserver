@@ -136,8 +136,6 @@ reachable from other devices. The firewall permits web access through the
 trusted Tailscale interface and HTTP on the Pi's Wi-Fi (`wlan0`) and Ethernet
 (`end0`) interfaces.
 
-With the HomeServer LAN DNS resolver, open **http://rasppi.home.arpa/** for the dashboard or **http://rasppi.home.arpa/audio/** for audio controls.
-
 On the same local network, open **http://rasppi.local/** for the dashboard or
 **http://rasppi.local/audio/** directly. This uses Avahi/mDNS and needs no
 Tailscale enrollment or local certificate installation. `http://rasppi/audio/`
