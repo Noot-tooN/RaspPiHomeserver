@@ -65,7 +65,6 @@ in
         }
       '';
       # Reuse Homer's generated document root and the audio proxy routes.
-      "http://rasppi.home.arpa".extraConfig = config.services.caddy.virtualHosts.${origin}.extraConfig;
       "http://rasppi.local".extraConfig = config.services.caddy.virtualHosts.${origin}.extraConfig;
       "http://rasppi".extraConfig = config.services.caddy.virtualHosts.${origin}.extraConfig;
     };
